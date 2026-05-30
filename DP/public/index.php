@@ -45,6 +45,114 @@ function lists(): array
 }
 
 
+
+function report_filters(): array
+{
+    $params = [];
+    $where = [];
+    if (!empty($_GET['item_id'])) {
+        $where[] = 'm.item_id=?';
+        $params[] = $_GET['item_id'];
+    }
+    if (!empty($_GET['from'])) {
+        $where[] = 'DATE(m.created_at)>=?';
+        $params[] = $_GET['from'];
+    }
+    if (!empty($_GET['to'])) {
+        $where[] = 'DATE(m.created_at)<=?';
+        $params[] = $_GET['to'];
+    }
+    return [$where, $params];
+}
+
+function report_rows(): array
+{
+    [$where, $params] = report_filters();
+    $sql = 'SELECT m.*, i.name item_name, i.sku, fw.name from_name, tw.name to_name
+            FROM stock_movements m
+            JOIN items i ON i.id=m.item_id
+            LEFT JOIN warehouses fw ON fw.id=m.from_warehouse_id
+            LEFT JOIN warehouses tw ON tw.id=m.to_warehouse_id '
+        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+        . ' ORDER BY m.created_at DESC LIMIT 500';
+    return Database::all($sql, $params);
+}
+
+function export_reports_xlsx(array $rows): never
+{
+    $headers = ['تاریخ شمسی', 'شماره ثبت', 'نوع', 'کالا', 'کد کالا', 'مقدار', 'از انبار', 'به انبار'];
+    $data = [$headers];
+    foreach ($rows as $row) {
+        $data[] = [
+            jalali_like_datetime($row['created_at']),
+            $row['reference_no'],
+            $row['type'],
+            $row['item_name'],
+            $row['sku'],
+            moneyless_number($row['quantity']),
+            $row['from_name'] ?: '-',
+            $row['to_name'] ?: '-',
+        ];
+    }
+
+    if (!class_exists('ZipArchive')) {
+        header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="inventory-report.xls"');
+        echo "\xEF\xBB\xBF";
+        echo '<html><head><meta charset="UTF-8"></head><body dir="rtl"><table border="1">';
+        foreach ($data as $line) {
+            echo '<tr>';
+            foreach ($line as $cell) {
+                echo '<td>' . e((string) $cell) . '</td>';
+            }
+            echo '</tr>';
+        }
+        echo '</table></body></html>';
+        exit;
+    }
+
+    $tmp = tempnam(sys_get_temp_dir(), 'xlsx_');
+    $zip = new ZipArchive();
+    $zip->open($tmp, ZipArchive::OVERWRITE);
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
+    $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+    $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="گزارش گردش" sheetId="1" r:id="rId1"/></sheets></workbook>');
+
+    $sheet = '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" rightToLeft="1"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews><sheetData>';
+    foreach ($data as $rIndex => $line) {
+        $sheet .= '<row r="' . ($rIndex + 1) . '">';
+        foreach ($line as $cIndex => $cell) {
+            $ref = chr(65 + $cIndex) . ($rIndex + 1);
+            $sheet .= '<c r="' . $ref . '" t="inlineStr"><is><t>' . htmlspecialchars((string) $cell, ENT_XML1 | ENT_COMPAT, 'UTF-8') . '</t></is></c>';
+        }
+        $sheet .= '</row>';
+    }
+    $sheet .= '</sheetData></worksheet>';
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheet);
+    $zip->close();
+
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="inventory-report.xlsx"');
+    header('Content-Length: ' . filesize($tmp));
+    readfile($tmp);
+    unlink($tmp);
+    exit;
+}
+
+function export_reports_pdf_html(array $rows): never
+{
+    header('Content-Type: text/html; charset=UTF-8');
+    header('Content-Disposition: inline; filename="inventory-report-pdf.html"');
+    echo "\xEF\xBB\xBF";
+    echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>خروجی PDF گزارش گردش کالا</title><style>body{font-family:Tahoma,Arial,sans-serif;direction:rtl;padding:20px;color:#111}table{width:100%;border-collapse:collapse;direction:rtl}th,td{border:1px solid #999;padding:7px;text-align:right}th{background:#eee}.no-print{margin-bottom:16px}@media print{.no-print{display:none}@page{size:A4 landscape;margin:12mm}}</style></head><body><div class="no-print"><button onclick="window.print()">چاپ / ذخیره PDF</button><p>برای دریافت PDF، در پنجره چاپ گزینه Save as PDF را انتخاب کنید. خروجی UTF-8 و راست‌به‌چپ است.</p></div><h1>گزارش گردش کالا</h1><table><tr><th>تاریخ شمسی</th><th>شماره ثبت</th><th>نوع</th><th>کالا</th><th>کد کالا</th><th>مقدار</th><th>از انبار</th><th>به انبار</th></tr>';
+    foreach ($rows as $row) {
+        echo '<tr><td>' . e(jalali_like_datetime($row['created_at'])) . '</td><td>' . e($row['reference_no']) . '</td><td>' . e($row['type']) . '</td><td>' . e($row['item_name']) . '</td><td>' . e($row['sku']) . '</td><td>' . e(moneyless_number($row['quantity'])) . '</td><td>' . e($row['from_name'] ?: '-') . '</td><td>' . e($row['to_name'] ?: '-') . '</td></tr>';
+    }
+    echo '</table><script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
+    exit;
+}
+
 function ensure_audit_log_table(): void
 {
     Database::query("CREATE TABLE IF NOT EXISTS audit_logs (
@@ -200,14 +308,14 @@ try {
         render('print_movement', ['row' => $row]);
     } elseif ($route === 'reports') {
         require_permission('reports');
-        $params = [];
-        $where = [];
-        if (!empty($_GET['item_id'])) {$where[]='m.item_id=?';$params[]=$_GET['item_id'];}
-        if (!empty($_GET['from'])) {$where[]='DATE(m.created_at)>=?';$params[]=$_GET['from'];}
-        if (!empty($_GET['to'])) {$where[]='DATE(m.created_at)<=?';$params[]=$_GET['to'];}
-        $sql = 'SELECT m.*, i.name item_name, i.sku, fw.name from_name, tw.name to_name FROM stock_movements m JOIN items i ON i.id=m.item_id LEFT JOIN warehouses fw ON fw.id=m.from_warehouse_id LEFT JOIN warehouses tw ON tw.id=m.to_warehouse_id ' . ($where ? ' WHERE '.implode(' AND ', $where) : '') . ' ORDER BY m.created_at DESC LIMIT 500';
         $stale = Database::all('SELECT i.*, MAX(m.created_at) last_move FROM items i LEFT JOIN stock_movements m ON m.item_id=i.id GROUP BY i.id HAVING last_move IS NULL OR last_move < DATE_SUB(NOW(), INTERVAL 90 DAY) ORDER BY last_move ASC');
-        render('reports', lists() + ['rows' => Database::all($sql, $params), 'lowItems' => Inventory::stockSummary(null, true), 'stale' => $stale]);
+        render('reports', lists() + ['rows' => report_rows(), 'lowItems' => Inventory::stockSummary(null, true), 'stale' => $stale]);
+    } elseif ($route === 'reports/export-xlsx') {
+        require_permission('reports');
+        export_reports_xlsx(report_rows());
+    } elseif ($route === 'reports/export-pdf') {
+        require_permission('reports');
+        export_reports_pdf_html(report_rows());
     } elseif ($route === 'audit-log') {
         if (!is_admin()) {
             http_response_code(403);
@@ -218,12 +326,25 @@ try {
         render('audit_log', ['rows' => $rows]);
     } elseif ($route === 'contacts') {
         require_permission('contacts');
-        render('contacts', ['suppliers' => Database::all('SELECT * FROM suppliers ORDER BY updated_at DESC'), 'customers' => Database::all('SELECT * FROM customers ORDER BY updated_at DESC')]);
+        $editSupplier = !empty($_GET['edit_supplier']) ? Database::one('SELECT * FROM suppliers WHERE id = ?', [(int) $_GET['edit_supplier']]) : null;
+        $editCustomer = !empty($_GET['edit_customer']) ? Database::one('SELECT * FROM customers WHERE id = ?', [(int) $_GET['edit_customer']]) : null;
+        render('contacts', [
+            'suppliers' => Database::all('SELECT * FROM suppliers ORDER BY updated_at DESC'),
+            'customers' => Database::all('SELECT * FROM customers ORDER BY updated_at DESC'),
+            'editSupplier' => $editSupplier,
+            'editCustomer' => $editCustomer,
+        ]);
     } elseif ($route === 'contacts/save') {
         require_permission('contacts');
         $table = ($_POST['kind'] ?? '') === 'customer' ? 'customers' : 'suppliers';
-        Database::query("INSERT INTO $table (name, phone, address, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())", [$_POST['name'], $_POST['phone'] ?? null, $_POST['address'] ?? null]);
-        flash('اطلاعات طرف حساب ذخیره شد.');
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id) {
+            Database::query("UPDATE $table SET name = ?, phone = ?, address = ?, updated_at = NOW() WHERE id = ?", [$_POST['name'], $_POST['phone'] ?? null, $_POST['address'] ?? null, $id]);
+            flash('اطلاعات طرف حساب ویرایش شد.');
+        } else {
+            Database::query("INSERT INTO $table (name, phone, address, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())", [$_POST['name'], $_POST['phone'] ?? null, $_POST['address'] ?? null]);
+            flash('اطلاعات طرف حساب ذخیره شد.');
+        }
         redirect('contacts');
     } elseif ($route === 'settings') {
         require_permission('manage_items');

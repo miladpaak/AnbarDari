@@ -1,4 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
+
+  document.querySelectorAll('[data-menu-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const sidebar = button.closest('.sidebar');
+      if (!sidebar) return;
+      const isOpen = sidebar.classList.toggle('nav-open');
+      button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+  });
+
   document.querySelectorAll('form[data-autosave]').forEach((form) => {
     const key = 'dp-autosave-' + (form.dataset.autosave || location.pathname);
     try {

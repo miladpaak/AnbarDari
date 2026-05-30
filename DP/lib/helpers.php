@@ -116,10 +116,60 @@ function moneyless_number($value): string
     return rtrim(rtrim(number_format((float) $value, 3, '.', ''), '0'), '.');
 }
 
+function gregorian_to_jalali(int $gy, int $gm, int $gd): array
+{
+    $gDaysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    $jDaysInMonth = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+
+    $gy -= 1600;
+    $gm -= 1;
+    $gd -= 1;
+
+    $gDayNo = 365 * $gy + intdiv($gy + 3, 4) - intdiv($gy + 99, 100) + intdiv($gy + 399, 400);
+    for ($i = 0; $i < $gm; $i++) {
+        $gDayNo += $gDaysInMonth[$i];
+    }
+    if ($gm > 1 && (($gy % 4 === 0 && $gy % 100 !== 0) || ($gy % 400 === 0))) {
+        $gDayNo++;
+    }
+    $gDayNo += $gd;
+
+    $jDayNo = $gDayNo - 79;
+    $jNp = intdiv($jDayNo, 12053);
+    $jDayNo %= 12053;
+
+    $jy = 979 + 33 * $jNp + 4 * intdiv($jDayNo, 1461);
+    $jDayNo %= 1461;
+
+    if ($jDayNo >= 366) {
+        $jy += intdiv($jDayNo - 1, 365);
+        $jDayNo = ($jDayNo - 1) % 365;
+    }
+
+    for ($i = 0; $i < 11 && $jDayNo >= $jDaysInMonth[$i]; $i++) {
+        $jDayNo -= $jDaysInMonth[$i];
+    }
+
+    return [$jy, $i + 1, $jDayNo + 1];
+}
+
 function jalali_like_datetime(?string $date): string
 {
     if (!$date) {
         return '-';
     }
-    return date('Y/m/d H:i', strtotime($date));
+    $timestamp = strtotime($date);
+    if ($timestamp === false) {
+        return '-';
+    }
+    [$jy, $jm, $jd] = gregorian_to_jalali((int) date('Y', $timestamp), (int) date('n', $timestamp), (int) date('j', $timestamp));
+    return sprintf('%04d/%02d/%02d %s', $jy, $jm, $jd, date('H:i', $timestamp));
+}
+
+function jalali_like_date(?string $date): string
+{
+    if (!$date) {
+        return '-';
+    }
+    return substr(jalali_like_datetime($date), 0, 10);
 }
