@@ -84,7 +84,7 @@ $isEdit = $editItem !== null;
                 <th>حداقل</th>
                 <th>بارکد</th>
                 <th>آخرین ویرایش</th>
-                <?php if (can('manage_items')): ?><th>عملیات</th><?php endif; ?>
+                <?php if (is_warehouse_manager()): ?><th>عملیات</th><?php endif; ?>
             </tr>
             <?php foreach ($rows as $r): ?>
                 <tr>
@@ -94,9 +94,20 @@ $isEdit = $editItem !== null;
                     <td><?= e($r['unit_name']) ?></td>
                     <td><span class="badge <?= $r['quantity'] <= $r['min_stock'] ? 'danger' : 'ok' ?>"><?= e(moneyless_number($r['quantity'])) ?></span></td>
                     <td><?= e(moneyless_number($r['min_stock'])) ?></td>
-                    <td><?= Barcode::svg($r['barcode'] ?: $r['sku'], 45) ?></td>
+                    <td>
+                        <?php $barcodeId = 'item-barcode-' . (int) $r['id']; ?>
+                        <div class="barcode-card">
+                            <button type="button" class="barcode-trigger" data-barcode-toggle aria-label="نمایش دکمه‌های بارکد">
+                                <span id="<?= e($barcodeId) ?>"><?= Barcode::svg($r['barcode'] ?: $r['sku'], 45) ?></span>
+                            </button>
+                            <div class="barcode-actions">
+                                <button type="button" class="btn secondary" data-download-svg="#<?= e($barcodeId) ?> svg" data-filename="<?= e($r['barcode'] ?: $r['sku']) ?>">دانلود</button>
+                                <button type="button" class="btn light" data-print-svg="#<?= e($barcodeId) ?> svg">پرینت</button>
+                            </div>
+                        </div>
+                    </td>
                     <td><?= e(jalali_like_datetime($r['updated_at'])) ?></td>
-                    <?php if (can('manage_items')): ?>
+                    <?php if (is_warehouse_manager()): ?>
                         <td>
                             <div class="actions">
                                 <a class="btn light" href="<?= e(base_url('items?edit=' . (int) $r['id'] . '#item-form')) ?>">ویرایش</a>

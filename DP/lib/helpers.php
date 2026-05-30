@@ -92,6 +92,17 @@ function can(string $permission): bool
     return in_array($permission, $map[$user['role']] ?? [], true);
 }
 
+
+function is_admin(): bool
+{
+    return ($_SESSION['user']['role'] ?? '') === 'admin';
+}
+
+function is_warehouse_manager(): bool
+{
+    return ($_SESSION['user']['role'] ?? '') === 'manager';
+}
+
 function require_permission(string $permission): void
 {
     if (!can($permission)) {

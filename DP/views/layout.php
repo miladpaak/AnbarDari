@@ -7,6 +7,7 @@
 <a href="<?= e(base_url('movement?type=out')) ?>">ثبت خروج</a>
 <a href="<?= e(base_url('movement?type=transfer')) ?>">انتقال بین انبار</a>
 <a href="<?= e(base_url('reports')) ?>">گزارش‌ها</a>
+<?php if (is_admin()): ?><a href="<?= e(base_url('audit-log')) ?>" class="<?= $currentRoute==='audit-log'?'active':'' ?>">تاریخچه ویرایش و حذف</a><?php endif; ?>
 <a href="<?= e(base_url('contacts')) ?>">تامین‌کنندگان/مشتریان</a>
 <a href="<?= e(base_url('settings')) ?>">تنظیمات و کاربران</a>
 <a href="<?= e(base_url('logout')) ?>">خروج</a>

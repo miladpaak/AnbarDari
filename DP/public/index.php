@@ -44,6 +44,39 @@ function lists(): array
     ];
 }
 
+
+function ensure_audit_log_table(): void
+{
+    Database::query("CREATE TABLE IF NOT EXISTS audit_logs (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        user_id INT UNSIGNED NULL,
+        item_id INT UNSIGNED NULL,
+        action VARCHAR(40) NOT NULL,
+        old_data JSON NULL,
+        new_data JSON NULL,
+        ip_address VARCHAR(64) NULL,
+        user_agent VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_audit_action_date (action, created_at),
+        INDEX idx_audit_item_date (item_id, created_at),
+        INDEX idx_audit_user_date (user_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function log_item_audit(string $action, ?int $itemId, ?array $oldData, ?array $newData, array $user): void
+{
+    ensure_audit_log_table();
+    Database::query('INSERT INTO audit_logs (user_id, item_id, action, old_data, new_data, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())', [
+        $user['id'] ?? null,
+        $itemId,
+        $action,
+        $oldData ? json_encode($oldData, JSON_UNESCAPED_UNICODE) : null,
+        $newData ? json_encode($newData, JSON_UNESCAPED_UNICODE) : null,
+        $_SERVER['REMOTE_ADDR'] ?? null,
+        substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+    ]);
+}
+
 try {
     if ($route === 'login') {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -75,7 +108,10 @@ try {
         $q = $_GET['q'] ?? null;
         $editItem = null;
         if (!empty($_GET['edit'])) {
-            require_permission('manage_items');
+            if (!is_warehouse_manager()) {
+                http_response_code(403);
+                exit('فقط مدیر انبار اجازه ویرایش کالا را دارد.');
+            }
             $editItem = Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [(int) $_GET['edit']]);
             if (!$editItem) {
                 flash('کالای مورد نظر برای ویرایش پیدا نشد.', 'error');
@@ -84,22 +120,38 @@ try {
         }
         render('items', ['rows' => Inventory::stockSummary($q), 'q' => $q, 'editItem' => $editItem]);
     } elseif ($route === 'items/save') {
-        require_permission('manage_items');
         $id = (int) ($_POST['id'] ?? 0);
+        if ($id && !is_warehouse_manager()) {
+            http_response_code(403);
+            exit('فقط مدیر انبار اجازه ویرایش کالا را دارد.');
+        }
+        if (!$id) {
+            require_permission('manage_items');
+        }
+        $oldItem = $id ? Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [$id]) : null;
+        if ($id && !$oldItem) {
+            flash('کالای مورد نظر برای ویرایش پیدا نشد.', 'error');
+            redirect('items');
+        }
         $barcode = $_POST['barcode'] ?: ($_POST['sku'] ?? '');
         $params = [$_POST['sku'], $barcode, $_POST['name'], $_POST['category_id'] ?: null, $_POST['unit_id'] ?: null, $_POST['min_stock'] ?: 0, $_POST['description'] ?? null];
         if ($id) {
             $params[] = $id;
             Database::query('UPDATE items SET sku=?, barcode=?, name=?, category_id=?, unit_id=?, min_stock=?, description=?, updated_at=NOW() WHERE id=?', $params);
+            $newItem = Database::one('SELECT * FROM items WHERE id = ?', [$id]);
+            log_item_audit('edit_item', $id, $oldItem, $newItem, $user);
         } else {
             Database::query('INSERT INTO items (sku, barcode, name, category_id, unit_id, min_stock, description, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NOW(),NOW())', $params);
         }
         flash($id ? 'تغییرات کالا ذخیره شد.' : 'کالا ذخیره شد.');
         redirect('items');
     } elseif ($route === 'items/delete') {
-        require_permission('manage_items');
+        if (!is_warehouse_manager()) {
+            http_response_code(403);
+            exit('فقط مدیر انبار اجازه حذف کالا را دارد.');
+        }
         $id = (int) ($_POST['id'] ?? 0);
-        $item = Database::one('SELECT id, name FROM items WHERE id = ? AND is_active = 1', [$id]);
+        $item = Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [$id]);
         if (!$item) {
             flash('کالای مورد نظر برای حذف پیدا نشد.', 'error');
             redirect('items');
@@ -107,9 +159,12 @@ try {
         $movementCount = (int) (Database::one('SELECT COUNT(*) c FROM stock_movements WHERE item_id = ?', [$id])['c'] ?? 0);
         if ($movementCount === 0) {
             Database::query('DELETE FROM items WHERE id = ?', [$id]);
+            log_item_audit('delete_item', $id, $item, null, $user);
             flash('کالا به‌طور کامل حذف شد.');
         } else {
             Database::query('UPDATE items SET is_active = 0, updated_at = NOW() WHERE id = ?', [$id]);
+            $newItem = Database::one('SELECT * FROM items WHERE id = ?', [$id]);
+            log_item_audit('deactivate_item', $id, $item, $newItem, $user);
             flash('کالا از لیست فعال حذف شد. سوابق گردش و موجودی آن برای گزارش‌ها حفظ می‌شود.');
         }
         redirect('items');
@@ -153,6 +208,14 @@ try {
         $sql = 'SELECT m.*, i.name item_name, i.sku, fw.name from_name, tw.name to_name FROM stock_movements m JOIN items i ON i.id=m.item_id LEFT JOIN warehouses fw ON fw.id=m.from_warehouse_id LEFT JOIN warehouses tw ON tw.id=m.to_warehouse_id ' . ($where ? ' WHERE '.implode(' AND ', $where) : '') . ' ORDER BY m.created_at DESC LIMIT 500';
         $stale = Database::all('SELECT i.*, MAX(m.created_at) last_move FROM items i LEFT JOIN stock_movements m ON m.item_id=i.id GROUP BY i.id HAVING last_move IS NULL OR last_move < DATE_SUB(NOW(), INTERVAL 90 DAY) ORDER BY last_move ASC');
         render('reports', lists() + ['rows' => Database::all($sql, $params), 'lowItems' => Inventory::stockSummary(null, true), 'stale' => $stale]);
+    } elseif ($route === 'audit-log') {
+        if (!is_admin()) {
+            http_response_code(403);
+            exit('فقط ادمین اصلی اجازه مشاهده تاریخچه ویرایش و حذف را دارد.');
+        }
+        ensure_audit_log_table();
+        $rows = Database::all('SELECT a.*, u.name user_name, u.username, i.name item_name, i.sku FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id LEFT JOIN items i ON i.id = a.item_id ORDER BY a.created_at DESC LIMIT 300');
+        render('audit_log', ['rows' => $rows]);
     } elseif ($route === 'contacts') {
         require_permission('contacts');
         render('contacts', ['suppliers' => Database::all('SELECT * FROM suppliers ORDER BY updated_at DESC'), 'customers' => Database::all('SELECT * FROM customers ORDER BY updated_at DESC')]);

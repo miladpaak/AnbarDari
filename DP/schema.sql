@@ -102,6 +102,22 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     CONSTRAINT fk_movements_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NULL,
+    item_id INT UNSIGNED NULL,
+    action VARCHAR(40) NOT NULL,
+    old_data JSON NULL,
+    new_data JSON NULL,
+    ip_address VARCHAR(64) NULL,
+    user_agent VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_action_date (action, created_at),
+    INDEX idx_audit_item_date (item_id, created_at),
+    INDEX idx_audit_user_date (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT IGNORE INTO units (name, symbol) VALUES ('عدد','عدد'), ('متر','m'), ('کیلوگرم','kg'), ('بسته','pkg');
 INSERT IGNORE INTO categories (name, description) VALUES ('عمومی','دسته‌بندی پیش‌فرض');
 INSERT IGNORE INTO warehouses (name, location) VALUES ('انبار اصلی','');
