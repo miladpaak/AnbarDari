@@ -10,12 +10,20 @@ session_name($config['security']['session_name'] ?? 'DP_SESSION');
 session_start();
 verify_csrf();
 
-$route = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
-$basePath = trim(str_replace('/public/index.php', '', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
-if ($basePath && str_starts_with($route, $basePath)) {
-    $route = trim(substr($route, strlen($basePath)), '/');
+$requestPath = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '', '/');
+$scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+$basePath = trim(preg_replace('#/(public/)?index\.php$#', '', $scriptName) ?: '', '/');
+
+if ($basePath !== '' && ($requestPath === $basePath || str_starts_with($requestPath, $basePath . '/'))) {
+    $requestPath = trim(substr($requestPath, strlen($basePath)), '/');
 }
-$route = $route ?: 'dashboard';
+if (str_starts_with($requestPath, 'public/')) {
+    $requestPath = trim(substr($requestPath, strlen('public/')), '/');
+}
+if ($requestPath === 'index.php') {
+    $requestPath = '';
+}
+$route = $requestPath ?: 'dashboard';
 
 function render(string $view, array $data = []): void
 {

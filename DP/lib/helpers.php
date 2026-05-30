@@ -19,7 +19,8 @@ function base_url(string $path = ''): string
 {
     $base = rtrim(app_config()['base_url'] ?? '', '/');
     if ($base === '') {
-        $script = str_replace('/public/index.php', '', $_SERVER['SCRIPT_NAME'] ?? '/DP');
+        $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '/DP');
+        $script = preg_replace('#/(public/)?index\.php$#', '', $script) ?: '/DP';
         $base = rtrim($script, '/');
     }
     return $base . '/' . ltrim($path, '/');
