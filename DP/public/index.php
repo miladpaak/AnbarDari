@@ -3,6 +3,7 @@ require __DIR__ . '/../lib/helpers.php';
 require __DIR__ . '/../lib/Database.php';
 require __DIR__ . '/../lib/Auth.php';
 require __DIR__ . '/../lib/Inventory.php';
+require __DIR__ . '/../lib/Accounting.php';
 require __DIR__ . '/../lib/Barcode.php';
 
 $config = app_config();
@@ -34,6 +35,7 @@ function render(string $view, array $data = []): void
 
 function lists(): array
 {
+    Accounting::ensureSchema();
     return [
         'items' => Database::all('SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name'),
         'warehouses' => Database::all('SELECT id, name FROM warehouses ORDER BY name'),
@@ -41,6 +43,8 @@ function lists(): array
         'customers' => Database::all('SELECT id, name FROM customers ORDER BY name'),
         'categories' => Database::all('SELECT id, name FROM categories ORDER BY name'),
         'units' => Database::all('SELECT id, name, symbol FROM units ORDER BY name'),
+        'banks' => Database::all('SELECT id, name, bank_name FROM bank_accounts WHERE is_active = 1 ORDER BY name'),
+        'accounts' => Database::all('SELECT id, code, name, type FROM accounting_accounts ORDER BY code'),
     ];
 }
 
@@ -316,6 +320,86 @@ try {
     } elseif ($route === 'reports/export-pdf') {
         require_permission('reports');
         export_reports_pdf_html(report_rows());
+    } elseif ($route === 'accounting') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $from = $_GET['from'] ?? null;
+        $to = $_GET['to'] ?? null;
+        $pl = Accounting::profitLoss($from, $to);
+        $salesToday = Database::one("SELECT COALESCE(SUM(total),0) c FROM invoices WHERE invoice_type='sale' AND invoice_date = CURDATE()")['c'] ?? 0;
+        $salesMonth = Database::one("SELECT COALESCE(SUM(total),0) c FROM invoices WHERE invoice_type='sale' AND YEAR(invoice_date)=YEAR(CURDATE()) AND MONTH(invoice_date)=MONTH(CURDATE())")['c'] ?? 0;
+        $gross = Database::one("SELECT COALESCE(SUM(ii.line_total - (ii.quantity * ii.cost_price)),0) c FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.invoice_type='sale'")['c'] ?? 0;
+        $debtors = Database::all("SELECT c.name, COALESCE(SUM(i.total - i.paid_amount),0) balance FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.invoice_type='sale' AND i.total > i.paid_amount GROUP BY c.id HAVING balance > 0 ORDER BY balance DESC LIMIT 10");
+        $creditors = Database::all("SELECT s.name, COALESCE(SUM(i.total - i.paid_amount),0) balance FROM invoices i JOIN suppliers s ON s.id=i.supplier_id WHERE i.invoice_type='purchase' AND i.total > i.paid_amount GROUP BY s.id HAVING balance > 0 ORDER BY balance DESC LIMIT 10");
+        render('accounting_dashboard', ['pl' => $pl, 'salesToday' => $salesToday, 'salesMonth' => $salesMonth, 'gross' => $gross, 'debtors' => $debtors, 'creditors' => $creditors, 'from' => $from, 'to' => $to]);
+    } elseif ($route === 'accounting/banks') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        render('bank_accounts', ['banks' => Database::all('SELECT * FROM bank_accounts ORDER BY updated_at DESC')]);
+    } elseif ($route === 'accounting/banks/save') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        Database::query('INSERT INTO bank_accounts (name, bank_name, account_no, iban, opening_balance, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())', [$_POST['name'], $_POST['bank_name'] ?? null, $_POST['account_no'] ?? null, $_POST['iban'] ?? null, $_POST['opening_balance'] ?: 0]);
+        flash('حساب بانکی ذخیره شد.');
+        redirect('accounting/banks');
+    } elseif ($route === 'accounting/journal') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $rows = Database::all('SELECT je.*, COALESCE(SUM(jl.debit),0) debit, COALESCE(SUM(jl.credit),0) credit FROM journal_entries je LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id GROUP BY je.id ORDER BY je.entry_date DESC, je.id DESC LIMIT 100');
+        render('journal', lists() + ['rows' => $rows, 'entryNo' => Accounting::nextNumber('JE')]);
+    } elseif ($route === 'accounting/journal/save') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $lines = [];
+        foreach (($_POST['lines'] ?? []) as $line) {
+            if (empty($line['account_id'])) continue;
+            $lines[] = ['account_id' => (int) $line['account_id'], 'debit' => (float) ($line['debit'] ?? 0), 'credit' => (float) ($line['credit'] ?? 0), 'party_type' => $line['party_type'] ?: null, 'party_id' => $line['party_id'] ?: null, 'bank_account_id' => $line['bank_account_id'] ?: null, 'memo' => $line['memo'] ?? null];
+        }
+        Accounting::createJournal(['entry_no' => $_POST['entry_no'] ?: Accounting::nextNumber('JE'), 'entry_date' => $_POST['entry_date'] ?: date('Y-m-d'), 'description' => $_POST['description'] ?? null, 'user_id' => $user['id']], $lines);
+        flash('سند دستی حسابداری ثبت شد.');
+        redirect('accounting/journal');
+    } elseif ($route === 'accounting/invoices') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $type = $_GET['type'] ?? 'sale';
+        $rows = Database::all('SELECT i.*, c.name customer_name, s.name supplier_name, w.name warehouse_name FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN suppliers s ON s.id=i.supplier_id JOIN warehouses w ON w.id=i.warehouse_id WHERE i.invoice_type=? ORDER BY i.invoice_date DESC, i.id DESC LIMIT 100', [$type]);
+        $itemMeta = Database::all('SELECT item_id, last_purchase_price, default_sale_price FROM accounting_item_meta');
+        render('invoices', lists() + ['type' => $type, 'rows' => $rows, 'invoiceNo' => Accounting::nextNumber($type === 'sale' ? 'SALE' : ($type === 'purchase' ? 'BUY' : 'PR')), 'itemMeta' => $itemMeta]);
+    } elseif ($route === 'accounting/invoices/save') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $id = Accounting::createInvoice([
+            'invoice_no' => $_POST['invoice_no'] ?: Accounting::nextNumber('INV'),
+            'invoice_type' => $_POST['invoice_type'],
+            'invoice_date' => $_POST['invoice_date'] ?: date('Y-m-d'),
+            'customer_id' => $_POST['customer_id'] ?? null,
+            'supplier_id' => $_POST['supplier_id'] ?? null,
+            'warehouse_id' => $_POST['warehouse_id'],
+            'bank_account_id' => $_POST['bank_account_id'] ?? null,
+            'payment_status' => $_POST['payment_status'] ?? 'credit',
+            'discount' => $_POST['discount'] ?? 0,
+            'tax' => $_POST['tax'] ?? 0,
+            'shipping_cost' => $_POST['shipping_cost'] ?? 0,
+            'paid_amount' => $_POST['paid_amount'] ?? 0,
+            'notes' => $_POST['notes'] ?? null,
+            'user_id' => $user['id'],
+        ], $_POST['items'] ?? []);
+        flash('فاکتور ثبت شد و گردش انبار/سند حسابداری آن به‌صورت خودکار ایجاد شد.');
+        redirect('accounting/invoices?type=' . urlencode($_POST['invoice_type']));
+    } elseif ($route === 'accounting/customer') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $customerId = (int) ($_GET['customer_id'] ?? 0);
+        $customer = $customerId ? Database::one('SELECT * FROM customers WHERE id=?', [$customerId]) : null;
+        $invoices = $customerId ? Database::all("SELECT * FROM invoices WHERE customer_id=? AND invoice_type='sale' ORDER BY invoice_date DESC", [$customerId]) : [];
+        $journals = $customerId ? Database::all("SELECT je.entry_date, je.entry_no, jl.debit, jl.credit, jl.memo FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE jl.party_type='customer' AND jl.party_id=? ORDER BY je.entry_date DESC", [$customerId]) : [];
+        render('customer_file', lists() + ['customer' => $customer, 'invoices' => $invoices, 'journals' => $journals]);
+    } elseif ($route === 'accounting/sales-report') {
+        require_permission('accounting');
+        Accounting::ensureSchema();
+        $group = ($_GET['group'] ?? 'daily') === 'monthly' ? '%Y-%m' : '%Y-%m-%d';
+        $rows = Database::all("SELECT DATE_FORMAT(i.invoice_date, '$group') period, COUNT(*) invoice_count, COALESCE(SUM(i.total),0) total, COALESCE(SUM(ii.quantity * ii.cost_price),0) cost, COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price),0) gross_profit FROM invoices i LEFT JOIN invoice_items ii ON ii.invoice_id=i.id WHERE i.invoice_type='sale' GROUP BY period ORDER BY period DESC LIMIT 60");
+        render('sales_report', ['rows' => $rows, 'group' => $_GET['group'] ?? 'daily']);
     } elseif ($route === 'audit-log') {
         if (!is_admin()) {
             http_response_code(403);
