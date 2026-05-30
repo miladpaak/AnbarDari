@@ -64,8 +64,8 @@ try {
 
     if ($route === 'dashboard') {
         $stats = [
-            'items' => Database::one('SELECT COUNT(*) c FROM items')['c'] ?? 0,
-            'stock' => Database::one('SELECT COALESCE(SUM(quantity),0) c FROM stocks')['c'] ?? 0,
+            'items' => Database::one('SELECT COUNT(*) c FROM items WHERE is_active = 1')['c'] ?? 0,
+            'stock' => Database::one('SELECT COALESCE(SUM(s.quantity),0) c FROM stocks s JOIN items i ON i.id = s.item_id WHERE i.is_active = 1')['c'] ?? 0,
             'low' => count(Inventory::stockSummary(null, true)),
             'today' => Database::one('SELECT COUNT(*) c FROM stock_movements WHERE DATE(created_at)=CURDATE()')['c'] ?? 0,
         ];
@@ -73,7 +73,16 @@ try {
     } elseif ($route === 'items') {
         require_permission('view');
         $q = $_GET['q'] ?? null;
-        render('items', ['rows' => Inventory::stockSummary($q), 'q' => $q]);
+        $editItem = null;
+        if (!empty($_GET['edit'])) {
+            require_permission('manage_items');
+            $editItem = Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [(int) $_GET['edit']]);
+            if (!$editItem) {
+                flash('کالای مورد نظر برای ویرایش پیدا نشد.', 'error');
+                redirect('items');
+            }
+        }
+        render('items', ['rows' => Inventory::stockSummary($q), 'q' => $q, 'editItem' => $editItem]);
     } elseif ($route === 'items/save') {
         require_permission('manage_items');
         $id = (int) ($_POST['id'] ?? 0);
@@ -85,7 +94,24 @@ try {
         } else {
             Database::query('INSERT INTO items (sku, barcode, name, category_id, unit_id, min_stock, description, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NOW(),NOW())', $params);
         }
-        flash('کالا ذخیره شد.');
+        flash($id ? 'تغییرات کالا ذخیره شد.' : 'کالا ذخیره شد.');
+        redirect('items');
+    } elseif ($route === 'items/delete') {
+        require_permission('manage_items');
+        $id = (int) ($_POST['id'] ?? 0);
+        $item = Database::one('SELECT id, name FROM items WHERE id = ? AND is_active = 1', [$id]);
+        if (!$item) {
+            flash('کالای مورد نظر برای حذف پیدا نشد.', 'error');
+            redirect('items');
+        }
+        $movementCount = (int) (Database::one('SELECT COUNT(*) c FROM stock_movements WHERE item_id = ?', [$id])['c'] ?? 0);
+        if ($movementCount === 0) {
+            Database::query('DELETE FROM items WHERE id = ?', [$id]);
+            flash('کالا به‌طور کامل حذف شد.');
+        } else {
+            Database::query('UPDATE items SET is_active = 0, updated_at = NOW() WHERE id = ?', [$id]);
+            flash('کالا از لیست فعال حذف شد. سوابق گردش و موجودی آن برای گزارش‌ها حفظ می‌شود.');
+        }
         redirect('items');
     } elseif ($route === 'movement') {
         require_permission('stock_in');

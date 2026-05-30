@@ -3,7 +3,7 @@ final class Inventory
 {
     public static function stockSummary(?string $search = null, bool $lowOnly = false): array
     {
-        $where = [];
+        $where = ['i.is_active = 1'];
         $params = [];
         if ($search) {
             $where[] = '(i.name LIKE ? OR i.sku LIKE ? OR i.barcode LIKE ?)';
