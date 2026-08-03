@@ -4,6 +4,7 @@ require __DIR__ . '/../lib/Database.php';
 require __DIR__ . '/../lib/Auth.php';
 require __DIR__ . '/../lib/Inventory.php';
 require __DIR__ . '/../lib/Accounting.php';
+require __DIR__ . '/../lib/WordPressSync.php';
 require __DIR__ . '/../lib/Barcode.php';
 
 $config = app_config();
@@ -332,6 +333,36 @@ try {
         $debtors = Database::all("SELECT c.name, COALESCE(SUM(i.total - i.paid_amount),0) balance FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.invoice_type='sale' AND i.total > i.paid_amount GROUP BY c.id HAVING balance > 0 ORDER BY balance DESC LIMIT 10");
         $creditors = Database::all("SELECT s.name, COALESCE(SUM(i.total - i.paid_amount),0) balance FROM invoices i JOIN suppliers s ON s.id=i.supplier_id WHERE i.invoice_type='purchase' AND i.total > i.paid_amount GROUP BY s.id HAVING balance > 0 ORDER BY balance DESC LIMIT 10");
         render('accounting_dashboard', ['pl' => $pl, 'salesToday' => $salesToday, 'salesMonth' => $salesMonth, 'gross' => $gross, 'debtors' => $debtors, 'creditors' => $creditors, 'from' => $from, 'to' => $to]);
+    } elseif ($route === 'accounting/wordpress') {
+        require_permission('accounting');
+        WordPressSync::ensureSchema();
+        $status = null;
+        if (WordPressSync::isConfigured()) {
+            try {
+                $status = WordPressSync::status();
+            } catch (Throwable $exception) {
+                $status = ['ok' => false, 'message' => $exception->getMessage()];
+            }
+        } else {
+            $status = ['ok' => false, 'message' => 'تنظیمات دیتابیس وردپرس در config.php کامل نیست.'];
+        }
+        render('wordpress_sync', lists() + ['status' => $status]);
+    } elseif ($route === 'accounting/wordpress/import-products') {
+        require_permission('accounting');
+        $result = WordPressSync::importProducts((int) $_POST['warehouse_id']);
+        flash('همگام‌سازی محصولات وردپرس انجام شد. جدید: ' . $result['created'] . '، بروزرسانی: ' . $result['updated'] . '، کل: ' . $result['total']);
+        redirect('accounting/wordpress');
+    } elseif ($route === 'accounting/wordpress/import-orders') {
+        require_permission('accounting');
+        $result = WordPressSync::importOrders((int) $_POST['warehouse_id'], (int) $user['id'], (int) ($_POST['limit'] ?? 50));
+        $message = 'همگام‌سازی سفارش‌های وردپرس انجام شد. فاکتور جدید: ' . $result['created'] . '، تکراری/بدون آیتم: ' . $result['skipped'];
+        if ($result['failed']) {
+            $message .= '، خطا: ' . implode(' | ', array_slice($result['failed'], 0, 3));
+            flash($message, 'error');
+        } else {
+            flash($message);
+        }
+        redirect('accounting/wordpress');
     } elseif ($route === 'accounting/banks') {
         require_permission('accounting');
         Accounting::ensureSchema();

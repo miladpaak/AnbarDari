@@ -15,6 +15,7 @@
 <a href="<?= e(base_url('accounting/journal')) ?>">ثبت سند دستی</a>
 <a href="<?= e(base_url('accounting/sales-report')) ?>">گزارش فروش</a>
 <a href="<?= e(base_url('accounting/banks')) ?>">حساب‌های بانکی</a>
+<a href="<?= e(base_url('accounting/wordpress')) ?>">اتصال وردپرس</a>
 <?php endif; ?>
 <?php if (is_admin()): ?><a href="<?= e(base_url('audit-log')) ?>" class="<?= $currentRoute==='audit-log'?'active':'' ?>">تاریخچه ویرایش و حذف</a><?php endif; ?>
 <a href="<?= e(base_url('contacts')) ?>">تامین‌کنندگان/مشتریان</a>

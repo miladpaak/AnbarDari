@@ -240,3 +240,23 @@ INSERT IGNORE INTO accounting_accounts (code, name, type, is_system, created_at)
 ('5100','خرید کالا','expense',1,NOW()),
 ('5200','هزینه حمل','expense',1,NOW()),
 ('5300','سایر هزینه‌ها','expense',1,NOW());
+
+CREATE TABLE IF NOT EXISTS wordpress_product_maps (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    wp_product_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    item_id INT UNSIGNED NOT NULL,
+    sku VARCHAR(120) NULL,
+    last_synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wp_product_maps_item FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+    INDEX idx_wp_product_item (item_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS wordpress_order_maps (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    wp_order_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    invoice_id INT UNSIGNED NOT NULL,
+    order_status VARCHAR(80) NULL,
+    last_synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wp_order_maps_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+    INDEX idx_wp_order_invoice (invoice_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
