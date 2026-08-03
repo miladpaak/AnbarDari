@@ -346,11 +346,24 @@ try {
         } else {
             $status = ['ok' => false, 'message' => 'تنظیمات دیتابیس وردپرس در config.php کامل نیست.'];
         }
-        render('wordpress_sync', lists() + ['status' => $status]);
+        $wpProducts = [];
+        if ($status['ok']) {
+            try {
+                $wpProducts = WordPressSync::wordpressProducts();
+            } catch (Throwable $exception) {
+                $status = ['ok' => false, 'message' => $exception->getMessage()];
+            }
+        }
+        render('wordpress_sync', lists() + ['status' => $status, 'wpProducts' => $wpProducts]);
     } elseif ($route === 'accounting/wordpress/import-products') {
         require_permission('accounting');
         $result = WordPressSync::importProducts((int) $_POST['warehouse_id']);
         flash('همگام‌سازی محصولات وردپرس انجام شد. جدید: ' . $result['created'] . '، بروزرسانی: ' . $result['updated'] . '، کل: ' . $result['total']);
+        redirect('accounting/wordpress');
+    } elseif ($route === 'accounting/wordpress/import-customers') {
+        require_permission('accounting');
+        $result = WordPressSync::importCustomers();
+        flash('مشتریان وردپرس به لیست مشتریان اضافه شدند. جدید: ' . $result['created'] . '، بروزرسانی: ' . $result['updated'] . '، کل: ' . $result['total']);
         redirect('accounting/wordpress');
     } elseif ($route === 'accounting/wordpress/import-orders') {
         require_permission('accounting');

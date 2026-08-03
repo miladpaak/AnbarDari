@@ -68,23 +68,34 @@ final class WordPressSync
         return ['ok' => true, 'message' => 'اتصال برقرار است.', 'products' => (int) ($stmt->fetch()['c'] ?? 0)];
     }
 
-    public static function importProducts(int $warehouseId): array
+    public static function wordpressProducts(): array
     {
-        self::ensureSchema();
         $pdo = self::connect();
         $prefix = self::tablePrefix();
-        $sql = "SELECT p.ID, p.post_title, p.post_type,
+        $sql = "SELECT p.ID, p.post_title, p.post_modified, p.post_type,
                     MAX(CASE WHEN pm.meta_key='_sku' THEN pm.meta_value END) sku,
                     MAX(CASE WHEN pm.meta_key='_regular_price' THEN pm.meta_value END) regular_price,
                     MAX(CASE WHEN pm.meta_key='_sale_price' THEN pm.meta_value END) sale_price,
                     MAX(CASE WHEN pm.meta_key='_price' THEN pm.meta_value END) price,
-                    MAX(CASE WHEN pm.meta_key='_stock' THEN pm.meta_value END) stock
+                    MAX(CASE WHEN pm.meta_key='_stock' THEN pm.meta_value END) stock,
+                    MAX(CASE WHEN pm.meta_key='_low_stock_amount' THEN pm.meta_value END) min_stock,
+                    MAX(CASE WHEN pm.meta_key IN ('_unit','unit','pa_unit') THEN pm.meta_value END) unit_name,
+                    GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR '، ') category_name
                 FROM `{$prefix}posts` p
                 LEFT JOIN `{$prefix}postmeta` pm ON pm.post_id = p.ID
+                LEFT JOIN `{$prefix}term_relationships` tr ON tr.object_id = p.ID
+                LEFT JOIN `{$prefix}term_taxonomy` tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy='product_cat'
+                LEFT JOIN `{$prefix}terms` t ON t.term_id = tt.term_id
                 WHERE p.post_type IN ('product','product_variation') AND p.post_status IN ('publish','private')
-                GROUP BY p.ID, p.post_title, p.post_type
+                GROUP BY p.ID, p.post_title, p.post_modified, p.post_type
                 ORDER BY p.ID DESC";
-        $rows = $pdo->query($sql)->fetchAll();
+        return $pdo->query($sql)->fetchAll();
+    }
+
+    public static function importProducts(int $warehouseId): array
+    {
+        self::ensureSchema();
+        $rows = self::wordpressProducts();
         $created = 0;
         $updated = 0;
         foreach ($rows as $row) {
@@ -92,13 +103,17 @@ final class WordPressSync
             $name = trim((string) ($row['post_title'] ?: $sku));
             $price = (float) ($row['sale_price'] !== null && $row['sale_price'] !== '' ? $row['sale_price'] : ($row['price'] ?: $row['regular_price'] ?: 0));
             $stock = is_numeric($row['stock']) ? (float) $row['stock'] : 0.0;
+            $minStock = is_numeric($row['min_stock']) ? (float) $row['min_stock'] : 0.0;
+            $categoryId = self::ensureCategory($row['category_name'] ?? null);
+            $unitId = self::ensureUnit($row['unit_name'] ?? null);
+            $updatedAt = strtotime((string) ($row['post_modified'] ?? '')) ? $row['post_modified'] : date('Y-m-d H:i:s');
             $item = Database::one('SELECT i.* FROM items i LEFT JOIN wordpress_product_maps m ON m.item_id=i.id WHERE m.wp_product_id=? OR i.sku=? LIMIT 1', [(int) $row['ID'], $sku]);
             if ($item) {
-                Database::query('UPDATE items SET name=?, barcode=?, is_active=1, updated_at=NOW() WHERE id=?', [$name, $sku, (int) $item['id']]);
+                Database::query('UPDATE items SET name=?, barcode=?, category_id=?, unit_id=?, min_stock=?, is_active=1, updated_at=? WHERE id=?', [$name, $sku, $categoryId, $unitId, $minStock, $updatedAt, (int) $item['id']]);
                 $itemId = (int) $item['id'];
                 $updated++;
             } else {
-                Database::query('INSERT INTO items (sku, barcode, name, min_stock, description, is_active, created_at, updated_at) VALUES (?, ?, ?, 0, ?, 1, NOW(), NOW())', [$sku, $sku, $name, 'وارد شده از وردپرس']);
+                Database::query('INSERT INTO items (sku, barcode, name, category_id, unit_id, min_stock, description, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), ?)', [$sku, $sku, $name, $categoryId, $unitId, $minStock, 'وارد شده از وردپرس', $updatedAt]);
                 $itemId = (int) Database::connect()->lastInsertId();
                 $created++;
             }
@@ -107,6 +122,73 @@ final class WordPressSync
             Database::query('INSERT INTO stocks (item_id, warehouse_id, quantity, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity), updated_at=NOW()', [$itemId, $warehouseId, $stock]);
         }
         return ['created' => $created, 'updated' => $updated, 'total' => count($rows)];
+    }
+
+    public static function importCustomers(): array
+    {
+        self::ensureSchema();
+        $pdo = self::connect();
+        $prefix = self::tablePrefix();
+        $sql = "SELECT u.ID, u.display_name, u.user_registered,
+                    MAX(CASE WHEN um.meta_key='first_name' THEN um.meta_value END) first_name,
+                    MAX(CASE WHEN um.meta_key='last_name' THEN um.meta_value END) last_name,
+                    MAX(CASE WHEN um.meta_key='billing_phone' THEN um.meta_value END) phone,
+                    MAX(CASE WHEN um.meta_key='billing_address_1' THEN um.meta_value END) address
+                FROM `{$prefix}users` u
+                JOIN `{$prefix}usermeta` cap ON cap.user_id=u.ID AND cap.meta_key=? AND cap.meta_value LIKE '%customer%'
+                LEFT JOIN `{$prefix}usermeta` um ON um.user_id=u.ID
+                GROUP BY u.ID, u.display_name, u.user_registered
+                ORDER BY u.ID DESC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$prefix . 'capabilities']);
+        $rows = $stmt->fetchAll();
+        $created = 0;
+        $updated = 0;
+        foreach ($rows as $row) {
+            $name = trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')) ?: ($row['display_name'] ?: 'مشتری وردپرس #' . $row['ID']);
+            $phone = trim((string) ($row['phone'] ?? ''));
+            $address = trim((string) ($row['address'] ?? ''));
+            $customer = $phone ? Database::one('SELECT * FROM customers WHERE phone=? LIMIT 1', [$phone]) : null;
+            if (!$customer) {
+                $customer = Database::one('SELECT * FROM customers WHERE name=? LIMIT 1', [$name]);
+            }
+            if ($customer) {
+                Database::query('UPDATE customers SET name=?, phone=?, address=?, updated_at=NOW() WHERE id=?', [$name, $phone ?: $customer['phone'], $address ?: $customer['address'], (int) $customer['id']]);
+                $updated++;
+            } else {
+                Database::query('INSERT INTO customers (name, phone, address, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())', [$name, $phone ?: null, $address ?: null]);
+                $created++;
+            }
+        }
+        return ['created' => $created, 'updated' => $updated, 'total' => count($rows)];
+    }
+
+    private static function ensureCategory(?string $name): ?int
+    {
+        $name = trim((string) $name);
+        if ($name === '') {
+            return null;
+        }
+        $existing = Database::one('SELECT id FROM categories WHERE name=?', [$name]);
+        if ($existing) {
+            return (int) $existing['id'];
+        }
+        Database::query('INSERT INTO categories (name, description, created_at, updated_at) VALUES (?, ?, NOW(), NOW())', [$name, 'وارد شده از وردپرس']);
+        return (int) Database::connect()->lastInsertId();
+    }
+
+    private static function ensureUnit(?string $name): ?int
+    {
+        $name = trim((string) $name);
+        if ($name === '') {
+            return null;
+        }
+        $existing = Database::one('SELECT id FROM units WHERE name=? OR symbol=?', [$name, $name]);
+        if ($existing) {
+            return (int) $existing['id'];
+        }
+        Database::query('INSERT INTO units (name, symbol, created_at, updated_at) VALUES (?, ?, NOW(), NOW())', [$name, $name]);
+        return (int) Database::connect()->lastInsertId();
     }
 
     public static function importOrders(int $warehouseId, int $userId, int $limit = 50): array
