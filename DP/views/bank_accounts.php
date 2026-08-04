@@ -1,0 +1,5 @@
+<?php $title = 'حساب‌های بانکی'; ?>
+<div class="grid">
+    <div class="col-4 card"><h2>ثبت حساب بانکی</h2><form method="post" action="<?= e(base_url('accounting/banks/save')) ?>" data-autosave="bank"><input type="hidden" name="_csrf" value="<?= e(csrf_token()) ?>"><label>عنوان حساب</label><input name="name" required><label>نام بانک</label><input name="bank_name"><label>شماره حساب/کارت</label><input name="account_no"><label>شبا</label><input name="iban"><label>مانده اول دوره</label><input type="number" step="0.01" name="opening_balance" value="0"><button class="btn">ذخیره</button></form></div>
+    <div class="col-8 card"><h2>لیست حساب‌ها</h2><div class="table-wrap"><table class="table"><tr><th>عنوان</th><th>بانک</th><th>شماره</th><th>شبا</th><th>مانده اول دوره</th></tr><?php foreach($banks as $b): ?><tr><td><?= e($b['name']) ?></td><td><?= e($b['bank_name']) ?></td><td><?= e($b['account_no']) ?></td><td><?= e($b['iban']) ?></td><td><?= e(number_format((float)$b['opening_balance'])) ?></td></tr><?php endforeach; ?></table></div></div>
+</div>

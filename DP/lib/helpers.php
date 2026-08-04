@@ -85,7 +85,7 @@ function can(string $permission): bool
         return true;
     }
     $map = [
-        'manager' => ['view', 'manage_items', 'stock_in', 'stock_out', 'transfer', 'reports', 'contacts'],
+        'manager' => ['view', 'manage_items', 'stock_in', 'stock_out', 'transfer', 'reports', 'contacts', 'accounting'],
         'keeper' => ['view', 'stock_in', 'stock_out', 'transfer'],
         'viewer' => ['view', 'reports'],
     ];
