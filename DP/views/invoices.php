@@ -1,13 +1,22 @@
 <?php
 $title = ['sale' => 'فاکتور فروش', 'purchase' => 'فاکتور خرید', 'purchase_return' => 'برگشت از خرید'][$type] ?? 'فاکتور';
 $meta = [];
-foreach ($itemMeta as $m) { $meta[(int)$m['item_id']] = $m; }
+foreach ($itemMeta as $m) {
+    $meta[(int) $m['item_id']] = $m;
+}
+$itemOptions = '';
+foreach ($items as $i) {
+    $m = $meta[(int) $i['id']] ?? ['last_purchase_price' => 0, 'default_sale_price' => 0];
+    $label = $i['name'] . ' - ' . $i['sku'] . ' | خرید: ' . moneyless_number($m['last_purchase_price']) . ' | فروش: ' . moneyless_number($m['default_sale_price']);
+    $itemOptions .= '<option value="' . e($i['id']) . '" data-sale-price="' . e((string) $m['default_sale_price']) . '" data-cost-price="' . e((string) $m['last_purchase_price']) . '">' . e($label) . '</option>';
+}
 ?>
 <div class="card">
     <h2><?= e($title) ?></h2>
     <p class="muted">در فاکتور خرید موجودی کالا به انبار اضافه می‌شود؛ در فاکتور فروش و برگشت از خرید موجودی از انبار انتخابی کسر می‌شود.</p>
-    <form method="post" action="<?= e(base_url('accounting/invoices/save')) ?>" data-autosave="invoice-<?= e($type) ?>">
-        <input type="hidden" name="_csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="invoice_type" value="<?= e($type) ?>">
+    <form method="post" action="<?= e(base_url('accounting/invoices/save')) ?>" data-autosave="invoice-<?= e($type) ?>" data-invoice-form data-invoice-type="<?= e($type) ?>">
+        <input type="hidden" name="_csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="invoice_type" value="<?= e($type) ?>">
         <div class="grid">
             <div class="col-3"><label>شماره فاکتور</label><input name="invoice_no" value="<?= e($invoiceNo) ?>" required></div>
             <div class="col-3"><label>تاریخ</label><input type="date" name="invoice_date" value="<?= e(date('Y-m-d')) ?>" required></div>
@@ -18,7 +27,30 @@ foreach ($itemMeta as $m) { $meta[(int)$m['item_id']] = $m; }
             <div class="col-3"><label>مبلغ پرداخت/دریافت شده</label><input type="number" step="0.01" name="paid_amount" value="0"></div>
             <div class="col-3"><label>هزینه حمل</label><input type="number" step="0.01" name="shipping_cost" value="0"></div>
         </div>
-        <div class="table-wrap"><table class="table"><tr><th>کالا</th><th>تعداد</th><th><?= $type==='sale'?'قیمت فروش':'قیمت خرید' ?></th><th>بهای تمام‌شده</th></tr><?php for($n=0;$n<8;$n++): ?><tr><td><select name="items[<?= $n ?>][item_id]"><option value="">-</option><?php foreach($items as $i): $m=$meta[(int)$i['id']] ?? ['last_purchase_price'=>0,'default_sale_price'=>0]; ?><option value="<?= e($i['id']) ?>"><?= e($i['name'].' - '.$i['sku'].' | خرید: '.moneyless_number($m['last_purchase_price']).' | فروش: '.moneyless_number($m['default_sale_price'])) ?></option><?php endforeach; ?></select></td><td><input type="number" step="0.001" name="items[<?= $n ?>][quantity]"></td><td><input type="number" step="0.01" name="items[<?= $n ?>][unit_price]"></td><td><input type="number" step="0.01" name="items[<?= $n ?>][cost_price]" placeholder="برای سود ناخالص"></td></tr><?php endfor; ?></table></div>
+        <div class="table-wrap">
+            <table class="table invoice-items-table">
+                <thead><tr><th>کالا</th><th>تعداد</th><th><?= $type==='sale'?'قیمت فروش':'قیمت خرید' ?></th><th>بهای تمام‌شده</th><th class="no-print">عملیات</th></tr></thead>
+                <tbody data-invoice-rows>
+                    <tr data-invoice-row>
+                        <td><select name="items[0][item_id]" data-searchable-select data-invoice-item><option value="">جستجو و انتخاب کالا</option><?= $itemOptions ?></select></td>
+                        <td><input type="number" step="0.001" name="items[0][quantity]"></td>
+                        <td><input type="number" step="0.01" name="items[0][unit_price]" data-unit-price <?= $type === 'purchase' ? 'placeholder="دستی وارد شود"' : '' ?>></td>
+                        <td><input type="number" step="0.01" name="items[0][cost_price]" data-cost-price placeholder="برای سود ناخالص"></td>
+                        <td class="no-print"><button type="button" class="btn light" data-remove-invoice-row>حذف</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="actions no-print" style="margin:12px 0"><button type="button" class="btn light" data-add-invoice-row>+ افزودن سطر کالا</button></div>
+        <template data-invoice-row-template>
+            <tr data-invoice-row>
+                <td><select name="items[__INDEX__][item_id]" data-searchable-select data-invoice-item><option value="">جستجو و انتخاب کالا</option><?= $itemOptions ?></select></td>
+                <td><input type="number" step="0.001" name="items[__INDEX__][quantity]"></td>
+                <td><input type="number" step="0.01" name="items[__INDEX__][unit_price]" data-unit-price <?= $type === 'purchase' ? 'placeholder="دستی وارد شود"' : '' ?>></td>
+                <td><input type="number" step="0.01" name="items[__INDEX__][cost_price]" data-cost-price placeholder="برای سود ناخالص"></td>
+                <td class="no-print"><button type="button" class="btn light" data-remove-invoice-row>حذف</button></td>
+            </tr>
+        </template>
         <div class="grid"><div class="col-3"><label>تخفیف</label><input type="number" step="0.01" name="discount" value="0"></div><div class="col-3"><label>مالیات/اضافات</label><input type="number" step="0.01" name="tax" value="0"></div><div class="col-6"><label>توضیحات</label><input name="notes"></div></div>
         <button class="btn">ثبت فاکتور و بروزرسانی انبار</button>
     </form>

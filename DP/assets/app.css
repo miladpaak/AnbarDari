@@ -212,3 +212,12 @@ textarea { min-height: 88px; }
   .print-only { display: block; }
   body { background: white; overflow: visible; }
 }
+
+.select-search {
+  margin-bottom: 6px;
+  background: #f8fafc;
+}
+
+.invoice-items-table .select-search {
+  min-width: 220px;
+}
