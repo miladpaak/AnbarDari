@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS items (
     unit_id INT UNSIGNED NULL,
     min_stock DECIMAL(14,3) NOT NULL DEFAULT 0,
     description TEXT NULL,
+    image_path VARCHAR(255) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -260,3 +261,12 @@ CREATE TABLE IF NOT EXISTS wordpress_order_maps (
     CONSTRAINT fk_wp_order_maps_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
     INDEX idx_wp_order_invoice (invoice_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('accounting_enabled', '1');

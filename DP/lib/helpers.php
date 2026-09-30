@@ -75,10 +75,24 @@ function require_login(): array
     return $_SESSION['user'];
 }
 
+
+function accounting_enabled(): bool
+{
+    return class_exists('FeatureSettings') ? FeatureSettings::accountingEnabled() : true;
+}
+
+function item_image_url(?string $path): string
+{
+    return $path ? base_url($path) : '';
+}
+
 function can(string $permission): bool
 {
     $user = $_SESSION['user'] ?? null;
     if (!$user) {
+        return false;
+    }
+    if ($permission === 'accounting' && !accounting_enabled()) {
         return false;
     }
     if (($user['role'] ?? '') === 'admin') {

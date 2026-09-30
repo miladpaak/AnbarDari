@@ -4,6 +4,7 @@ require __DIR__ . '/../lib/Database.php';
 require __DIR__ . '/../lib/Auth.php';
 require __DIR__ . '/../lib/Inventory.php';
 require __DIR__ . '/../lib/Accounting.php';
+require __DIR__ . '/../lib/FeatureSettings.php';
 require __DIR__ . '/../lib/WordPressSync.php';
 require __DIR__ . '/../lib/Barcode.php';
 
@@ -36,6 +37,7 @@ function render(string $view, array $data = []): void
 
 function lists(): array
 {
+    FeatureSettings::ensureSchema();
     Accounting::ensureSchema();
     return [
         'items' => Database::all('SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name'),
@@ -73,7 +75,7 @@ function report_filters(): array
 function report_rows(): array
 {
     [$where, $params] = report_filters();
-    $sql = 'SELECT m.*, i.name item_name, i.sku, fw.name from_name, tw.name to_name
+    $sql = 'SELECT m.*, i.name item_name, i.sku, i.image_path, fw.name from_name, tw.name to_name
             FROM stock_movements m
             JOIN items i ON i.id=m.item_id
             LEFT JOIN warehouses fw ON fw.id=m.from_warehouse_id
@@ -85,7 +87,7 @@ function report_rows(): array
 
 function export_reports_xlsx(array $rows): never
 {
-    $headers = ['تاریخ شمسی', 'شماره ثبت', 'نوع', 'کالا', 'کد کالا', 'مقدار', 'از انبار', 'به انبار'];
+    $headers = ['تاریخ شمسی', 'شماره ثبت', 'نوع', 'کالا', 'کد کالا', 'تصویر کالا', 'مقدار', 'از انبار', 'به انبار'];
     $data = [$headers];
     foreach ($rows as $row) {
         $data[] = [
@@ -94,6 +96,7 @@ function export_reports_xlsx(array $rows): never
             $row['type'],
             $row['item_name'],
             $row['sku'],
+            item_image_url($row['image_path']),
             moneyless_number($row['quantity']),
             $row['from_name'] ?: '-',
             $row['to_name'] ?: '-',
@@ -150,12 +153,53 @@ function export_reports_pdf_html(array $rows): never
     header('Content-Type: text/html; charset=UTF-8');
     header('Content-Disposition: inline; filename="inventory-report-pdf.html"');
     echo "\xEF\xBB\xBF";
-    echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>خروجی PDF گزارش گردش کالا</title><style>body{font-family:Tahoma,Arial,sans-serif;direction:rtl;padding:20px;color:#111}table{width:100%;border-collapse:collapse;direction:rtl}th,td{border:1px solid #999;padding:7px;text-align:right}th{background:#eee}.no-print{margin-bottom:16px}@media print{.no-print{display:none}@page{size:A4 landscape;margin:12mm}}</style></head><body><div class="no-print"><button onclick="window.print()">چاپ / ذخیره PDF</button><p>برای دریافت PDF، در پنجره چاپ گزینه Save as PDF را انتخاب کنید. خروجی UTF-8 و راست‌به‌چپ است.</p></div><h1>گزارش گردش کالا</h1><table><tr><th>تاریخ شمسی</th><th>شماره ثبت</th><th>نوع</th><th>کالا</th><th>کد کالا</th><th>مقدار</th><th>از انبار</th><th>به انبار</th></tr>';
+    echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>خروجی PDF گزارش گردش کالا</title><style>body{font-family:Tahoma,Arial,sans-serif;direction:rtl;padding:20px;color:#111}table{width:100%;border-collapse:collapse;direction:rtl}th,td{border:1px solid #999;padding:7px;text-align:right}th{background:#eee}.no-print{margin-bottom:16px}@media print{.no-print{display:none}@page{size:A4 landscape;margin:12mm}}</style></head><body><div class="no-print"><button onclick="window.print()">چاپ / ذخیره PDF</button><p>برای دریافت PDF، در پنجره چاپ گزینه Save as PDF را انتخاب کنید. خروجی UTF-8 و راست‌به‌چپ است.</p></div><h1>گزارش گردش کالا</h1><table><tr><th>تاریخ شمسی</th><th>شماره ثبت</th><th>نوع</th><th>کالا</th><th>کد کالا</th><th>تصویر کالا</th><th>مقدار</th><th>از انبار</th><th>به انبار</th></tr>';
     foreach ($rows as $row) {
-        echo '<tr><td>' . e(jalali_like_datetime($row['created_at'])) . '</td><td>' . e($row['reference_no']) . '</td><td>' . e($row['type']) . '</td><td>' . e($row['item_name']) . '</td><td>' . e($row['sku']) . '</td><td>' . e(moneyless_number($row['quantity'])) . '</td><td>' . e($row['from_name'] ?: '-') . '</td><td>' . e($row['to_name'] ?: '-') . '</td></tr>';
+        echo '<tr><td>' . e(jalali_like_datetime($row['created_at'])) . '</td><td>' . e($row['reference_no']) . '</td><td>' . e($row['type']) . '</td><td>' . e($row['item_name']) . '</td><td>' . e($row['sku']) . '</td><td>' . ($row['image_path'] ? '<img src="' . e(item_image_url($row['image_path'])) . '" alt="تصویر کالا" style="max-width:70px;max-height:70px">' : '-') . '</td><td>' . e(moneyless_number($row['quantity'])) . '</td><td>' . e($row['from_name'] ?: '-') . '</td><td>' . e($row['to_name'] ?: '-') . '</td></tr>';
     }
     echo '</table><script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
     exit;
+}
+
+function save_item_image(?array $upload, ?string $currentPath = null): ?string
+{
+    if (!$upload || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return $currentPath;
+    }
+    if (($upload['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('بارگذاری تصویر ناموفق بود. محدودیت‌های upload_max_filesize و post_max_size در تنظیمات PHP سرور را بررسی کنید.');
+    }
+    $imageInfo = @getimagesize($upload['tmp_name']);
+    if ($imageInfo === false) {
+        throw new RuntimeException('فایل انتخاب‌شده یک تصویر معتبر نیست.');
+    }
+    $extensions = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp', IMAGETYPE_BMP => 'bmp', IMAGETYPE_AVIF => 'avif'];
+    $extension = $extensions[$imageInfo[2]] ?? null;
+    if (!$extension) {
+        throw new RuntimeException('فرمت تصویر پشتیبانی نمی‌شود.');
+    }
+    $directory = __DIR__ . '/../uploads/items';
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        throw new RuntimeException('ساخت پوشه ذخیره‌سازی تصاویر ممکن نشد.');
+    }
+    $path = 'uploads/items/' . bin2hex(random_bytes(16)) . '.' . $extension;
+    if (!move_uploaded_file($upload['tmp_name'], __DIR__ . '/../' . $path)) {
+        throw new RuntimeException('ذخیره تصویر روی سرور ممکن نشد.');
+    }
+    if ($currentPath && $currentPath !== $path) {
+        delete_item_image($currentPath);
+    }
+    return $path;
+}
+
+function delete_item_image(?string $path): void
+{
+    if ($path && str_starts_with($path, 'uploads/items/')) {
+        $file = __DIR__ . '/../' . $path;
+        if (is_file($file)) {
+            unlink($file);
+        }
+    }
 }
 
 function ensure_audit_log_table(): void
@@ -207,6 +251,7 @@ try {
     }
 
     $user = require_login();
+    FeatureSettings::ensureSchema();
 
     if ($route === 'dashboard') {
         $stats = [
@@ -247,14 +292,15 @@ try {
             redirect('items');
         }
         $barcode = $_POST['barcode'] ?: ($_POST['sku'] ?? '');
-        $params = [$_POST['sku'], $barcode, $_POST['name'], $_POST['category_id'] ?: null, $_POST['unit_id'] ?: null, $_POST['min_stock'] ?: 0, $_POST['description'] ?? null];
+        $imagePath = save_item_image($_FILES['image'] ?? null, $oldItem['image_path'] ?? null);
+        $params = [$_POST['sku'], $barcode, $_POST['name'], $_POST['category_id'] ?: null, $_POST['unit_id'] ?: null, $_POST['min_stock'] ?: 0, $_POST['description'] ?? null, $imagePath];
         if ($id) {
             $params[] = $id;
-            Database::query('UPDATE items SET sku=?, barcode=?, name=?, category_id=?, unit_id=?, min_stock=?, description=?, updated_at=NOW() WHERE id=?', $params);
+            Database::query('UPDATE items SET sku=?, barcode=?, name=?, category_id=?, unit_id=?, min_stock=?, description=?, image_path=?, updated_at=NOW() WHERE id=?', $params);
             $newItem = Database::one('SELECT * FROM items WHERE id = ?', [$id]);
             log_item_audit('edit_item', $id, $oldItem, $newItem, $user);
         } else {
-            Database::query('INSERT INTO items (sku, barcode, name, category_id, unit_id, min_stock, description, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NOW(),NOW())', $params);
+            Database::query('INSERT INTO items (sku, barcode, name, category_id, unit_id, min_stock, description, image_path, created_at, updated_at) VALUES (?,?,?,?,?,?,?, ?, NOW(),NOW())', $params);
         }
         flash($id ? 'تغییرات کالا ذخیره شد.' : 'کالا ذخیره شد.');
         redirect('items');
@@ -271,6 +317,7 @@ try {
         }
         $movementCount = (int) (Database::one('SELECT COUNT(*) c FROM stock_movements WHERE item_id = ?', [$id])['c'] ?? 0);
         if ($movementCount === 0) {
+            delete_item_image($item['image_path'] ?? null);
             Database::query('DELETE FROM items WHERE id = ?', [$id]);
             log_item_audit('delete_item', $id, $item, null, $user);
             flash('کالا به‌طور کامل حذف شد.');
@@ -303,7 +350,7 @@ try {
         redirect('movement/print?id=' . $id);
     } elseif ($route === 'movement/print') {
         require_permission('view');
-        $row = Database::one('SELECT m.*, i.name item_name, i.sku, fw.name from_name, tw.name to_name, u.name user_name
+        $row = Database::one('SELECT m.*, i.name item_name, i.sku, i.image_path, fw.name from_name, tw.name to_name, u.name user_name
             FROM stock_movements m
             JOIN items i ON i.id=m.item_id
             LEFT JOIN warehouses fw ON fw.id=m.from_warehouse_id
@@ -476,7 +523,15 @@ try {
         redirect('contacts');
     } elseif ($route === 'settings') {
         require_permission('manage_items');
-        render('settings', lists() + ['users' => Database::all('SELECT id,name,username,role,is_active,updated_at FROM users ORDER BY updated_at DESC')]);
+        render('settings', lists() + ['users' => Database::all('SELECT id,name,username,role,is_active,updated_at FROM users ORDER BY updated_at DESC'), 'accountingEnabled' => FeatureSettings::accountingEnabled()]);
+    } elseif ($route === 'settings/accounting') {
+        if (!is_admin()) {
+            http_response_code(403);
+            exit('فقط ادمین اجازه تغییر وضعیت حسابداری را دارد.');
+        }
+        FeatureSettings::setAccountingEnabled(isset($_POST['accounting_enabled']));
+        flash(isset($_POST['accounting_enabled']) ? 'ماژول حسابداری فعال شد.' : 'ماژول حسابداری غیرفعال شد.');
+        redirect('settings');
     } elseif ($route === 'settings/save-basic') {
         require_permission('manage_items');
         $table = match ($_POST['kind'] ?? '') {'unit' => 'units', 'warehouse' => 'warehouses', default => 'categories'};

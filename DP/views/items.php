@@ -18,7 +18,7 @@ $isEdit = $editItem !== null;
         <?php if ($isEdit): ?>
             <p class="muted">در حال ویرایش: <?= e($editItem['name']) ?> - <?= e($editItem['sku']) ?></p>
         <?php endif; ?>
-        <form method="post" action="<?= e(base_url('items/save')) ?>" data-autosave="<?= $isEdit ? 'item-edit-' . (int) $editItem['id'] : 'item' ?>">
+        <form method="post" enctype="multipart/form-data" action="<?= e(base_url('items/save')) ?>" data-autosave="<?= $isEdit ? 'item-edit-' . (int) $editItem['id'] : 'item' ?>">
             <input type="hidden" name="_csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="id" value="<?= e($editItem['id'] ?? '') ?>">
             <div class="grid">
@@ -56,6 +56,12 @@ $isEdit = $editItem !== null;
                     <label>حداقل موجودی</label>
                     <input name="min_stock" type="number" step="0.001" value="<?= e((string) ($editItem['min_stock'] ?? '0')) ?>">
                 </div>
+                <div class="col-3">
+                    <label>تصویر کالا</label>
+                    <input name="image" type="file" accept="image/*">
+                    <p class="muted">بدون محدودیت در اندازه یا ابعاد از سمت برنامه.</p>
+                    <?php if (!empty($editItem['image_path'])): ?><img class="item-image-preview" src="<?= e(item_image_url($editItem['image_path'])) ?>" alt="تصویر فعلی کالا"><?php endif; ?>
+                </div>
                 <div class="col-12">
                     <label>توضیحات</label>
                     <textarea name="description"><?= e($editItem['description'] ?? '') ?></textarea>
@@ -76,6 +82,7 @@ $isEdit = $editItem !== null;
     <div class="table-wrap">
         <table class="table">
             <tr>
+                <th>تصویر</th>
                 <th>نام</th>
                 <th>کد</th>
                 <th>دسته</th>
@@ -88,6 +95,7 @@ $isEdit = $editItem !== null;
             </tr>
             <?php foreach ($rows as $r): ?>
                 <tr>
+                    <td><?php if (!empty($r['image_path'])): ?><img class="item-thumbnail" src="<?= e(item_image_url($r['image_path'])) ?>" alt="<?= e($r['name']) ?>"><?php else: ?><span class="muted">-</span><?php endif; ?></td>
                     <td><?= e($r['name']) ?></td>
                     <td><?= e($r['sku']) ?></td>
                     <td><?= e($r['category_name']) ?></td>
