@@ -1,7 +1,7 @@
 <?php $title='گزارش‌ها'; ?>
 <div class="card">
     <form class="grid" method="get">
-        <div class="col-4"><label>کالا</label><select name="item_id"><option value="">همه</option><?php foreach($items as $i): ?><option value="<?= e($i['id']) ?>" <?= (($_GET['item_id']??'')==$i['id'])?'selected':'' ?>><?= e($i['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-4"><label>کالا</label><select name="item_id" data-searchable-select><option value="">همه</option><?php foreach($items as $i): ?><option value="<?= e($i['id']) ?>" <?= (($_GET['item_id']??'')==$i['id'])?'selected':'' ?>><?= e($i['name']) ?></option><?php endforeach; ?></select></div>
         <div class="col-3"><label>از تاریخ</label><input type="date" name="from" value="<?= e($_GET['from']??'') ?>"></div>
         <div class="col-3"><label>تا تاریخ</label><input type="date" name="to" value="<?= e($_GET['to']??'') ?>"></div>
         <div class="col-2"><label>&nbsp;</label><button class="btn">گزارش</button></div>

@@ -7,6 +7,16 @@
 <a href="<?= e(base_url('movement?type=out')) ?>">ثبت خروج</a>
 <a href="<?= e(base_url('movement?type=transfer')) ?>">انتقال بین انبار</a>
 <a href="<?= e(base_url('reports')) ?>">گزارش‌ها</a>
+<?php if (can('accounting')): ?>
+<a href="<?= e(base_url('accounting')) ?>" class="<?= str_starts_with($currentRoute,'accounting')?'active':'' ?>">حسابداری</a>
+<a href="<?= e(base_url('accounting/invoices?type=purchase')) ?>">فاکتور خرید</a>
+<a href="<?= e(base_url('accounting/invoices?type=sale')) ?>">فاکتور فروش</a>
+<a href="<?= e(base_url('accounting/invoices?type=purchase_return')) ?>">برگشت از خرید</a>
+<a href="<?= e(base_url('accounting/journal')) ?>">ثبت سند دستی</a>
+<a href="<?= e(base_url('accounting/sales-report')) ?>">گزارش فروش</a>
+<a href="<?= e(base_url('accounting/banks')) ?>">حساب‌های بانکی</a>
+<a href="<?= e(base_url('accounting/wordpress')) ?>">اتصال وردپرس</a>
+<?php endif; ?>
 <?php if (is_admin()): ?><a href="<?= e(base_url('audit-log')) ?>" class="<?= $currentRoute==='audit-log'?'active':'' ?>">تاریخچه ویرایش و حذف</a><?php endif; ?>
 <a href="<?= e(base_url('contacts')) ?>">تامین‌کنندگان/مشتریان</a>
 <a href="<?= e(base_url('settings')) ?>">تنظیمات و کاربران</a>
