@@ -5,6 +5,7 @@ require __DIR__ . '/../lib/Auth.php';
 require __DIR__ . '/../lib/Inventory.php';
 require __DIR__ . '/../lib/Accounting.php';
 require __DIR__ . '/../lib/FeatureSettings.php';
+require __DIR__ . '/../lib/IssueRequests.php';
 require __DIR__ . '/../lib/WordPressSync.php';
 require __DIR__ . '/../lib/Barcode.php';
 
@@ -328,6 +329,69 @@ try {
             flash('کالا از لیست فعال حذف شد. سوابق گردش و موجودی آن برای گزارش‌ها حفظ می‌شود.');
         }
         redirect('items');
+    } elseif ($route === 'issue-requests') {
+        if (!can('issue_requests') && !can('issue_review')) {
+            http_response_code(403);
+            exit('شما به حواله‌های خروج دسترسی ندارید.');
+        }
+        IssueRequests::ensureSchema();
+        $where = [];
+        $params = [];
+        if (can('issue_requests') && !can('issue_review') && !is_admin()) {
+            $where[] = 'r.requester_id=?';
+            $params[] = $user['id'];
+        }
+        if (!empty($_GET['status']) && in_array($_GET['status'], ['pending', 'approved', 'rejected'], true)) {
+            $where[] = 'r.status=?';
+            $params[] = $_GET['status'];
+        }
+        $issues = Database::all('SELECT r.*, w.name warehouse_name, u.name requester_name, rv.name reviewer_name, COUNT(ri.id) item_count FROM stock_issue_requests r JOIN warehouses w ON w.id=r.warehouse_id JOIN users u ON u.id=r.requester_id LEFT JOIN users rv ON rv.id=r.reviewer_id LEFT JOIN stock_issue_request_items ri ON ri.issue_request_id=r.id' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' GROUP BY r.id ORDER BY FIELD(r.status, \'pending\', \'approved\', \'rejected\'), r.created_at DESC', $params);
+        render('issue_requests', lists() + ['issues' => $issues]);
+    } elseif ($route === 'issue-requests/new') {
+        require_permission('issue_requests');
+        IssueRequests::ensureSchema();
+        render('issue_request_form', lists() + ['issueCode' => IssueRequests::nextCode()]);
+    } elseif ($route === 'issue-requests/save') {
+        require_permission('issue_requests');
+        IssueRequests::ensureSchema();
+        $id = IssueRequests::create(['issue_code' => $_POST['issue_code'] ?: IssueRequests::nextCode(), 'warehouse_id' => (int) $_POST['warehouse_id'], 'requester_id' => $user['id'], 'recipient_name' => $_POST['recipient_name'] ?? null, 'notes' => $_POST['notes'] ?? null], $_POST['items'] ?? []);
+        flash('حواله خروج با موفقیت ثبت و برای بررسی انباردار ارسال شد.');
+        redirect('issue-requests/view?id=' . $id);
+    } elseif ($route === 'issue-requests/view') {
+        if (!can('issue_requests') && !can('issue_review')) {
+            http_response_code(403);
+            exit('شما به حواله‌های خروج دسترسی ندارید.');
+        }
+        $issue = IssueRequests::details((int) ($_GET['id'] ?? 0));
+        if (!$issue || (can('issue_requests') && !can('issue_review') && !is_admin() && (int) $issue['requester_id'] !== (int) $user['id'])) {
+            http_response_code(404);
+            exit('حواله مورد نظر پیدا نشد.');
+        }
+        render('issue_request_view', ['issue' => $issue]);
+    } elseif ($route === 'issue-requests/review') {
+        require_permission('issue_review');
+        $action = $_POST['action'] ?? '';
+        if ($action === 'approve') {
+            IssueRequests::approve((int) $_POST['id'], (int) $user['id'], $_POST['review_notes'] ?? null);
+            flash('حواله تایید شد و موجودی انبار کاهش یافت.');
+        } elseif ($action === 'reject') {
+            IssueRequests::reject((int) $_POST['id'], (int) $user['id'], $_POST['review_notes'] ?? '');
+            flash('حواله رد شد.', 'error');
+        } else {
+            throw new RuntimeException('عملیات بررسی نامعتبر است.');
+        }
+        redirect('issue-requests/view?id=' . (int) $_POST['id']);
+    } elseif ($route === 'issue-requests/print') {
+        if (!can('issue_requests') && !can('issue_review')) {
+            http_response_code(403);
+            exit('شما به حواله‌های خروج دسترسی ندارید.');
+        }
+        $issue = IssueRequests::details((int) ($_GET['id'] ?? 0));
+        if (!$issue || (can('issue_requests') && !can('issue_review') && !is_admin() && (int) $issue['requester_id'] !== (int) $user['id'])) {
+            http_response_code(404);
+            exit('حواله مورد نظر پیدا نشد.');
+        }
+        render('print_issue_request', ['issue' => $issue]);
     } elseif ($route === 'movement') {
         require_permission('stock_in');
         render('movement', lists() + ['type' => $_GET['type'] ?? 'in', 'reference' => Inventory::nextReference()]);

@@ -226,3 +226,9 @@ textarea { min-height: 88px; }
 .feature-setting { border-right: 4px solid var(--brand); }
 .toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .toggle-label input { width: auto; }
+.issue-toolbar, .issue-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.issue-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr)); gap: 14px; }
+.issue-card { margin: 0; border-right: 4px solid var(--warn); }
+.issue-card.issue-approved, .issue-status.issue-approved { border-right: 4px solid var(--ok); }
+.issue-card.issue-rejected, .issue-status.issue-rejected { border-right: 4px solid var(--danger); }
+.issue-items-table { min-width: 700px; }

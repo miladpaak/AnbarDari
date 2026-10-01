@@ -14,6 +14,11 @@ final class FeatureSettings
         if (!$imageColumn) {
             Database::query('ALTER TABLE items ADD COLUMN image_path VARCHAR(255) NULL AFTER description');
         }
+        $roleColumn = Database::one("SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'");
+        if ($roleColumn && !str_contains($roleColumn['COLUMN_TYPE'], "'employee'")) {
+            Database::query("ALTER TABLE users MODIFY role ENUM('admin','manager','keeper','viewer','employee') NOT NULL DEFAULT 'viewer'");
+        }
+        IssueRequests::ensureSchema();
     }
 
     public static function accountingEnabled(): bool

@@ -100,7 +100,8 @@ function can(string $permission): bool
     }
     $map = [
         'manager' => ['view', 'manage_items', 'stock_in', 'stock_out', 'transfer', 'reports', 'contacts', 'accounting'],
-        'keeper' => ['view', 'stock_in', 'stock_out', 'transfer'],
+        'keeper' => ['view', 'stock_in', 'stock_out', 'transfer', 'issue_review'],
+        'employee' => ['view', 'issue_requests'],
         'viewer' => ['view', 'reports'],
     ];
     return in_array($permission, $map[$user['role']] ?? [], true);

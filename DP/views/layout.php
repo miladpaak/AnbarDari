@@ -6,6 +6,7 @@
 <a href="<?= e(base_url('movement?type=in')) ?>">ثبت ورود</a>
 <a href="<?= e(base_url('movement?type=out')) ?>">ثبت خروج</a>
 <a href="<?= e(base_url('movement?type=transfer')) ?>">انتقال بین انبار</a>
+<?php if (can('issue_requests') || can('issue_review')): ?><a href="<?= e(base_url('issue-requests')) ?>" class="<?= str_starts_with($currentRoute,'issue-requests')?'active':'' ?>">حواله خروج از انبار</a><?php endif; ?>
 <a href="<?= e(base_url('reports')) ?>">گزارش‌ها</a>
 <?php if (can('accounting')): ?>
 <a href="<?= e(base_url('accounting')) ?>" class="<?= str_starts_with($currentRoute,'accounting')?'active':'' ?>">حسابداری</a>

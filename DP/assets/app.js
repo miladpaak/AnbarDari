@@ -159,3 +159,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+document.querySelectorAll('[data-issue-form]').forEach((form) => {
+  const body = form.querySelector('.issue-items-table tbody');
+  const template = document.getElementById('issue-item-template');
+  let index = body.querySelectorAll('tr').length;
+  form.querySelector('[data-add-issue-item]')?.addEventListener('click', () => {
+    body.insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__INDEX__', String(index++)));
+  });
+  body.addEventListener('click', (event) => {
+    if (event.target.closest('[data-remove-issue-item]') && body.querySelectorAll('tr').length > 1) event.target.closest('tr').remove();
+  });
+});
+
+document.querySelectorAll('[data-reject-issue]').forEach((button) => {
+  button.addEventListener('click', (event) => {
+    const notes = button.form.querySelector('[data-review-notes]');
+    if (!notes.value.trim()) {
+      event.preventDefault();
+      alert('برای رد حواله، توضیحات را وارد کنید.');
+      notes.focus();
+    }
+  });
+});
