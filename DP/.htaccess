@@ -11,6 +11,8 @@ DirectoryIndex public/index.php
     # Let static assets be served directly and prevent rewriting an already
     # internally-routed /public request back into /public/public/... .
     RewriteRule ^assets/ - [L]
+    # Uploaded item images are stored at the application root, not under public/.
+    RewriteRule ^uploads/ - [L]
     RewriteRule ^public/ - [L]
 
     # Front-controller routing for /DP and friendly URLs such as /DP/login.
