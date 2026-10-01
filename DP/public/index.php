@@ -277,7 +277,11 @@ try {
                 redirect('items');
             }
         }
-        render('items', ['rows' => Inventory::stockSummary($q), 'q' => $q, 'editItem' => $editItem]);
+        $perPage = in_array((int) ($_GET['per_page'] ?? 10), [10, 20, 50, 100], true) ? (int) ($_GET['per_page'] ?? 10) : 10;
+        $totalItems = Inventory::stockSummaryCount($q);
+        $totalPages = max(1, (int) ceil($totalItems / $perPage));
+        $page = min(max(1, (int) ($_GET['page'] ?? 1)), $totalPages);
+        render('items', ['rows' => Inventory::stockSummary($q, false, $perPage, ($page - 1) * $perPage), 'q' => $q, 'editItem' => $editItem, 'page' => $page, 'perPage' => $perPage, 'totalItems' => $totalItems, 'totalPages' => $totalPages]);
     } elseif ($route === 'items/save') {
         $id = (int) ($_POST['id'] ?? 0);
         if ($id && !can('manage_items')) {

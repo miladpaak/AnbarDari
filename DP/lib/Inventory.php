@@ -1,7 +1,7 @@
 <?php
 final class Inventory
 {
-    public static function stockSummary(?string $search = null, bool $lowOnly = false): array
+    public static function stockSummary(?string $search = null, bool $lowOnly = false, ?int $limit = null, int $offset = 0): array
     {
         $where = ['i.is_active = 1'];
         $params = [];
@@ -20,7 +20,23 @@ final class Inventory
                 GROUP BY i.id
                 $having
                 ORDER BY i.updated_at DESC, i.name";
+        if ($limit !== null) {
+            $sql .= ' LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset);
+        }
         return Database::all($sql, $params);
+    }
+
+    public static function stockSummaryCount(?string $search = null): int
+    {
+        $params = [];
+        $where = ['i.is_active = 1'];
+        if ($search) {
+            $where[] = '(i.name LIKE ? OR i.sku LIKE ? OR i.barcode LIKE ?)';
+            $like = '%' . $search . '%';
+            array_push($params, $like, $like, $like);
+        }
+        $row = Database::one('SELECT COUNT(*) c FROM items i WHERE ' . implode(' AND ', $where), $params);
+        return (int) ($row['c'] ?? 0);
     }
 
     public static function currentStock(int $itemId, ?int $warehouseId = null): float

@@ -182,3 +182,32 @@ document.querySelectorAll('[data-reject-issue]').forEach((button) => {
     }
   });
 });
+
+(() => {
+  const triggers = document.querySelectorAll('[data-lightbox-image]');
+  if (!triggers.length) return;
+  const lightbox = document.createElement('div');
+  lightbox.className = 'lightbox';
+  lightbox.hidden = true;
+  lightbox.setAttribute('role', 'dialog');
+  lightbox.setAttribute('aria-modal', 'true');
+  lightbox.setAttribute('aria-label', 'نمایش بزرگ تصویر کالا');
+  const image = document.createElement('img');
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'lightbox-close';
+  close.setAttribute('aria-label', 'بستن تصویر');
+  close.textContent = '×';
+  lightbox.append(close, image);
+  document.body.appendChild(lightbox);
+  const closeLightbox = () => { lightbox.hidden = true; image.removeAttribute('src'); };
+  triggers.forEach((trigger) => trigger.addEventListener('click', () => {
+    image.src = trigger.dataset.lightboxImage;
+    image.alt = trigger.dataset.lightboxAlt || 'تصویر کالا';
+    lightbox.hidden = false;
+    close.focus();
+  }));
+  close.addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', (event) => { if (event.target === lightbox) closeLightbox(); });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !lightbox.hidden) closeLightbox(); });
+})();

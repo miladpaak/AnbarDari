@@ -7,6 +7,9 @@ $isEdit = $editItem !== null;
 <div class="card">
     <form class="searchbar" method="get">
         <input name="q" placeholder="جستجوی سریع نام، کد یا بارکد" value="<?= e($q) ?>">
+        <select name="per_page" aria-label="تعداد ردیف در هر صفحه">
+            <?php foreach ([10, 20, 50, 100] as $option): ?><option value="<?= $option ?>" <?= $perPage === $option ? 'selected' : '' ?>><?= $option ?> ردیف</option><?php endforeach; ?>
+        </select>
         <button class="btn">جستجو</button>
         <a class="btn light" href="<?= e(base_url('items')) ?>">نمایش همه</a>
     </form>
@@ -78,7 +81,7 @@ $isEdit = $editItem !== null;
 <?php endif; ?>
 
 <div class="card">
-    <h2>لیست کالاها</h2>
+    <div class="issue-card-head"><h2>لیست کالاها</h2><span class="muted"><?= e((string) $totalItems) ?> کالا</span></div>
     <div class="table-wrap">
         <table class="table">
             <tr>
@@ -95,7 +98,7 @@ $isEdit = $editItem !== null;
             </tr>
             <?php foreach ($rows as $r): ?>
                 <tr>
-                    <td><?php if (!empty($r['image_path'])): ?><img class="item-thumbnail" src="<?= e(item_image_url($r['image_path'])) ?>" alt="<?= e($r['name']) ?>"><?php else: ?><span class="muted">-</span><?php endif; ?></td>
+                    <td><?php if (!empty($r['image_path'])): ?><button class="thumbnail-trigger" type="button" data-lightbox-image="<?= e(item_image_url($r['image_path'])) ?>" data-lightbox-alt="<?= e($r['name']) ?>"><img class="item-thumbnail" src="<?= e(item_image_url($r['image_path'])) ?>" alt="<?= e($r['name']) ?>"></button><?php else: ?><span class="muted">-</span><?php endif; ?></td>
                     <td><?= e($r['name']) ?></td>
                     <td><?= e($r['sku']) ?></td>
                     <td><?= e($r['category_name']) ?></td>
@@ -131,4 +134,13 @@ $isEdit = $editItem !== null;
             <?php endforeach; ?>
         </table>
     </div>
+    <?php if ($totalPages > 1): ?>
+        <nav class="pagination" aria-label="صفحه‌بندی لیست کالاها">
+            <?php if ($page > 1): ?><a class="btn light" href="<?= e(base_url('items?' . http_build_query(['q' => $q, 'per_page' => $perPage, 'page' => $page - 1]))) ?>">قبلی</a><?php endif; ?>
+            <?php for ($number = max(1, $page - 2); $number <= min($totalPages, $page + 2); $number++): ?>
+                <a class="btn <?= $number === $page ? '' : 'light' ?>" href="<?= e(base_url('items?' . http_build_query(['q' => $q, 'per_page' => $perPage, 'page' => $number]))) ?>"><?= e((string) $number) ?></a>
+            <?php endfor; ?>
+            <?php if ($page < $totalPages): ?><a class="btn light" href="<?= e(base_url('items?' . http_build_query(['q' => $q, 'per_page' => $perPage, 'page' => $page + 1]))) ?>">بعدی</a><?php endif; ?>
+        </nav>
+    <?php endif; ?>
 </div>
