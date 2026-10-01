@@ -70,6 +70,11 @@ final class Inventory
         }
     }
 
+    public static function decreaseStock(int $itemId, int $warehouseId, float $quantity): void
+    {
+        self::changeStock($itemId, $warehouseId, -$quantity);
+    }
+
     private static function changeStock(int $itemId, int $warehouseId, float $delta): void
     {
         Database::query('INSERT INTO stocks (item_id, warehouse_id, quantity, updated_at)

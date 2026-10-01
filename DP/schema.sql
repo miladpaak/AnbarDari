@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(120) NOT NULL,
     username VARCHAR(80) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role ENUM('admin','manager','keeper','viewer') NOT NULL DEFAULT 'viewer',
+    role ENUM('admin','manager','keeper','viewer','employee') NOT NULL DEFAULT 'viewer',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     last_login_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS items (
     unit_id INT UNSIGNED NULL,
     min_stock DECIMAL(14,3) NOT NULL DEFAULT 0,
     description TEXT NULL,
+    image_path VARCHAR(255) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -259,4 +260,45 @@ CREATE TABLE IF NOT EXISTS wordpress_order_maps (
     last_synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_wp_order_maps_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
     INDEX idx_wp_order_invoice (invoice_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('accounting_enabled', '1');
+
+
+CREATE TABLE IF NOT EXISTS stock_issue_requests (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    issue_code VARCHAR(80) NOT NULL UNIQUE,
+    warehouse_id INT UNSIGNED NOT NULL,
+    requester_id INT UNSIGNED NOT NULL,
+    recipient_name VARCHAR(160) NULL,
+    notes TEXT NULL,
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    reviewer_id INT UNSIGNED NULL,
+    review_notes TEXT NULL,
+    reviewed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_issue_warehouse FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    CONSTRAINT fk_issue_requester FOREIGN KEY (requester_id) REFERENCES users(id),
+    CONSTRAINT fk_issue_reviewer FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_issue_status_date (status, created_at),
+    INDEX idx_issue_requester (requester_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS stock_issue_request_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    issue_request_id INT UNSIGNED NOT NULL,
+    item_id INT UNSIGNED NOT NULL,
+    quantity DECIMAL(14,3) NOT NULL,
+    notes VARCHAR(255) NULL,
+    CONSTRAINT fk_issue_item_request FOREIGN KEY (issue_request_id) REFERENCES stock_issue_requests(id) ON DELETE CASCADE,
+    CONSTRAINT fk_issue_item_item FOREIGN KEY (item_id) REFERENCES items(id),
+    INDEX idx_issue_item_request (issue_request_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

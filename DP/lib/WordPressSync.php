@@ -80,9 +80,15 @@ final class WordPressSync
                     MAX(CASE WHEN pm.meta_key='_stock' THEN pm.meta_value END) stock,
                     MAX(CASE WHEN pm.meta_key='_low_stock_amount' THEN pm.meta_value END) min_stock,
                     MAX(CASE WHEN pm.meta_key IN ('_unit','unit','pa_unit') THEN pm.meta_value END) unit_name,
+                    COALESCE(NULLIF(MAX(image.guid), ''), NULLIF(MAX(parent_image.guid), '')) image_url,
                     GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR '، ') category_name
                 FROM `{$prefix}posts` p
                 LEFT JOIN `{$prefix}postmeta` pm ON pm.post_id = p.ID
+                LEFT JOIN `{$prefix}postmeta` image_meta ON image_meta.post_id=p.ID AND image_meta.meta_key='_thumbnail_id'
+                LEFT JOIN `{$prefix}posts` image ON image.ID=CAST(image_meta.meta_value AS UNSIGNED) AND image.post_type='attachment'
+                LEFT JOIN `{$prefix}posts` parent_product ON parent_product.ID=p.post_parent
+                LEFT JOIN `{$prefix}postmeta` parent_image_meta ON parent_image_meta.post_id=parent_product.ID AND parent_image_meta.meta_key='_thumbnail_id'
+                LEFT JOIN `{$prefix}posts` parent_image ON parent_image.ID=CAST(parent_image_meta.meta_value AS UNSIGNED) AND parent_image.post_type='attachment'
                 LEFT JOIN `{$prefix}term_relationships` tr ON tr.object_id = p.ID
                 LEFT JOIN `{$prefix}term_taxonomy` tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy='product_cat'
                 LEFT JOIN `{$prefix}terms` t ON t.term_id = tt.term_id
@@ -98,6 +104,8 @@ final class WordPressSync
         $rows = self::wordpressProducts();
         $created = 0;
         $updated = 0;
+        $imagesImported = 0;
+        $imagesFailed = 0;
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?: 'WP-' . $row['ID']));
             $name = trim((string) ($row['post_title'] ?: $sku));
@@ -117,11 +125,77 @@ final class WordPressSync
                 $itemId = (int) Database::connect()->lastInsertId();
                 $created++;
             }
+            if (!empty($row['image_url'])) {
+                try {
+                    $imagePath = self::importProductImage((string) $row['image_url'], $item['image_path'] ?? null);
+                    if ($imagePath) {
+                        Database::query('UPDATE items SET image_path=? WHERE id=?', [$imagePath, $itemId]);
+                        $imagesImported++;
+                    }
+                } catch (Throwable $exception) {
+                    $imagesFailed++;
+                }
+            }
             Database::query('INSERT INTO wordpress_product_maps (wp_product_id, item_id, sku, last_synced_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE item_id=VALUES(item_id), sku=VALUES(sku), last_synced_at=NOW()', [(int) $row['ID'], $itemId, $sku]);
             Database::query('INSERT INTO accounting_item_meta (item_id, last_purchase_price, default_sale_price, updated_at) VALUES (?, 0, ?, NOW()) ON DUPLICATE KEY UPDATE default_sale_price=VALUES(default_sale_price), updated_at=NOW()', [$itemId, $price]);
             Database::query('INSERT INTO stocks (item_id, warehouse_id, quantity, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity), updated_at=NOW()', [$itemId, $warehouseId, $stock]);
         }
-        return ['created' => $created, 'updated' => $updated, 'total' => count($rows)];
+        return ['created' => $created, 'updated' => $updated, 'images_imported' => $imagesImported, 'images_failed' => $imagesFailed, 'total' => count($rows)];
+    }
+
+    private static function importProductImage(string $url, ?string $currentPath): ?string
+    {
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            throw new RuntimeException('نشانی تصویر وردپرس معتبر نیست.');
+        }
+        $contents = self::downloadImage($url);
+        $imageInfo = @getimagesizefromstring($contents);
+        if ($imageInfo === false) {
+            throw new RuntimeException('فایل دریافت‌شده تصویر معتبر نیست.');
+        }
+        $extensions = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp', IMAGETYPE_BMP => 'bmp'];
+        if (defined('IMAGETYPE_AVIF')) {
+            $extensions[IMAGETYPE_AVIF] = 'avif';
+        }
+        $extension = $extensions[$imageInfo[2]] ?? null;
+        if (!$extension) {
+            throw new RuntimeException('فرمت تصویر وردپرس پشتیبانی نمی‌شود.');
+        }
+        $directory = __DIR__ . '/../uploads/items';
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new RuntimeException('ساخت پوشه ذخیره‌سازی تصاویر ممکن نشد.');
+        }
+        $path = 'uploads/items/' . bin2hex(random_bytes(16)) . '.' . $extension;
+        if (file_put_contents(__DIR__ . '/../' . $path, $contents) === false) {
+            throw new RuntimeException('ذخیره تصویر وردپرس ممکن نشد.');
+        }
+        if ($currentPath && str_starts_with($currentPath, 'uploads/items/')) {
+            $currentFile = __DIR__ . '/../' . $currentPath;
+            if (is_file($currentFile)) {
+                unlink($currentFile);
+            }
+        }
+        return $path;
+    }
+
+    private static function downloadImage(string $url): string
+    {
+        if (function_exists('curl_init')) {
+            $curl = curl_init($url);
+            curl_setopt_array($curl, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 60, CURLOPT_USERAGENT => 'DP Inventory WordPress Sync']);
+            $contents = curl_exec($curl);
+            $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            curl_close($curl);
+            if (is_string($contents) && $status >= 200 && $status < 300) {
+                return $contents;
+            }
+        }
+        $context = stream_context_create(['http' => ['timeout' => 60, 'follow_location' => 1, 'user_agent' => 'DP Inventory WordPress Sync']]);
+        $contents = @file_get_contents($url, false, $context);
+        if (!is_string($contents)) {
+            throw new RuntimeException('دریافت تصویر از وردپرس ممکن نشد.');
+        }
+        return $contents;
     }
 
     public static function importCustomers(): array

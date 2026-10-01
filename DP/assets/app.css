@@ -221,3 +221,14 @@ textarea { min-height: 88px; }
 .invoice-items-table .select-search {
   min-width: 220px;
 }
+.item-thumbnail { display: block; width: 56px; height: 56px; object-fit: cover; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.item-image-preview { display: block; width: 120px; height: 120px; object-fit: contain; margin-top: 8px; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc; }
+.feature-setting { border-right: 4px solid var(--brand); }
+.toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggle-label input { width: auto; }
+.issue-toolbar, .issue-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.issue-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr)); gap: 14px; }
+.issue-card { margin: 0; border-right: 4px solid var(--warn); }
+.issue-card.issue-approved, .issue-status.issue-approved { border-right: 4px solid var(--ok); }
+.issue-card.issue-rejected, .issue-status.issue-rejected { border-right: 4px solid var(--danger); }
+.issue-items-table { min-width: 700px; }
