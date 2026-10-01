@@ -91,7 +91,7 @@ $isEdit = $editItem !== null;
                 <th>حداقل</th>
                 <th>بارکد</th>
                 <th>آخرین ویرایش</th>
-                <?php if (is_warehouse_manager()): ?><th>عملیات</th><?php endif; ?>
+                <?php if (can('manage_items')): ?><th>عملیات</th><?php endif; ?>
             </tr>
             <?php foreach ($rows as $r): ?>
                 <tr>
@@ -115,7 +115,7 @@ $isEdit = $editItem !== null;
                         </div>
                     </td>
                     <td><?= e(jalali_like_datetime($r['updated_at'])) ?></td>
-                    <?php if (is_warehouse_manager()): ?>
+                    <?php if (can('manage_items')): ?>
                         <td>
                             <div class="actions">
                                 <a class="btn light" href="<?= e(base_url('items?edit=' . (int) $r['id'] . '#item-form')) ?>">ویرایش</a>

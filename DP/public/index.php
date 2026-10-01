@@ -266,9 +266,9 @@ try {
         $q = $_GET['q'] ?? null;
         $editItem = null;
         if (!empty($_GET['edit'])) {
-            if (!is_warehouse_manager()) {
+            if (!can('manage_items')) {
                 http_response_code(403);
-                exit('فقط مدیر انبار اجازه ویرایش کالا را دارد.');
+                exit('شما اجازه ویرایش کالا را ندارید.');
             }
             $editItem = Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [(int) $_GET['edit']]);
             if (!$editItem) {
@@ -279,9 +279,9 @@ try {
         render('items', ['rows' => Inventory::stockSummary($q), 'q' => $q, 'editItem' => $editItem]);
     } elseif ($route === 'items/save') {
         $id = (int) ($_POST['id'] ?? 0);
-        if ($id && !is_warehouse_manager()) {
+        if ($id && !can('manage_items')) {
             http_response_code(403);
-            exit('فقط مدیر انبار اجازه ویرایش کالا را دارد.');
+            exit('شما اجازه ویرایش کالا را ندارید.');
         }
         if (!$id) {
             require_permission('manage_items');
@@ -305,9 +305,9 @@ try {
         flash($id ? 'تغییرات کالا ذخیره شد.' : 'کالا ذخیره شد.');
         redirect('items');
     } elseif ($route === 'items/delete') {
-        if (!is_warehouse_manager()) {
+        if (!can('manage_items')) {
             http_response_code(403);
-            exit('فقط مدیر انبار اجازه حذف کالا را دارد.');
+            exit('شما اجازه حذف کالا را ندارید.');
         }
         $id = (int) ($_POST['id'] ?? 0);
         $item = Database::one('SELECT * FROM items WHERE id = ? AND is_active = 1', [$id]);
@@ -405,7 +405,7 @@ try {
     } elseif ($route === 'accounting/wordpress/import-products') {
         require_permission('accounting');
         $result = WordPressSync::importProducts((int) $_POST['warehouse_id']);
-        flash('همگام‌سازی محصولات وردپرس انجام شد. جدید: ' . $result['created'] . '، بروزرسانی: ' . $result['updated'] . '، کل: ' . $result['total']);
+        flash('همگام‌سازی محصولات وردپرس انجام شد. جدید: ' . $result['created'] . '، بروزرسانی: ' . $result['updated'] . '، تصویرهای واردشده: ' . $result['images_imported'] . '، خطای تصویر: ' . $result['images_failed'] . '، کل: ' . $result['total']);
         redirect('accounting/wordpress');
     } elseif ($route === 'accounting/wordpress/import-customers') {
         require_permission('accounting');
